@@ -34,6 +34,9 @@ const STRIP_REQ_HEADERS = new Set([
 ]);
 // 响应头中由 Node 重新计算的传输层头
 const STRIP_RES_HEADERS = new Set(['content-length', 'transfer-encoding']);
+// Node fetch (undici) 会自动解压这些编码；解压后响应体已是明文，必须丢弃 Content-Encoding 头，
+// 否则浏览器按压缩解码会报 ERR_CONTENT_DECODING_FAILED
+const AUTO_DECOMPRESSED = new Set(['gzip', 'deflate', 'br']);
 
 export interface ForwardOutcome {
   status: number;
@@ -114,7 +117,10 @@ export async function proxyForward(
   // 复制响应头
   const respHeaders = new Headers();
   for (const [key, value] of upstream.headers.entries()) {
-    if (STRIP_RES_HEADERS.has(key.toLowerCase())) continue;
+    const lk = key.toLowerCase();
+    if (STRIP_RES_HEADERS.has(lk)) continue;
+    // undici 已自动解压的编码：丢弃 Content-Encoding，保持「明文体 + 无编码头」一致
+    if (lk === 'content-encoding' && AUTO_DECOMPRESSED.has(value.toLowerCase().trim())) continue;
     respHeaders.set(key, value);
   }
 
