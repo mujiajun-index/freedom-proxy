@@ -3,7 +3,8 @@ import path from 'path';
 import type { AccessLogConfig, AccessLogEntry } from '../types';
 
 export interface LogQuery {
-  limit?: number;
+  page?: number;
+  pageSize?: number;
   ip?: string;
   path?: string;
   status?: string;
@@ -15,7 +16,32 @@ export interface LogQuery {
 
 export interface QueryResult {
   total: number;
+  page: number;
+  pageSize: number;
   items: AccessLogEntry[];
+}
+
+/** 本地时间格式：YYYY-MM-DD HH:mm:ss.SSS */
+export function formatLocalTime(d: Date): string {
+  const p = (n: number, len = 2) => String(n).padStart(len, '0');
+  return (
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
+    `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`
+  );
+}
+
+/**
+ * 将日志时间字符串解析为毫秒时间戳。
+ * 兼容本地格式 `YYYY-MM-DD HH:mm:ss.SSS`（按本地时区）与 ISO 字符串；解析失败返回 0。
+ */
+function parseLogTime(s: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/.exec(s);
+  if (m) {
+    const ms = m[7] ? Number(m[7].padEnd(3, '0').slice(0, 3)) : 0;
+    return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6], ms).getTime();
+  }
+  const t = new Date(s).getTime();
+  return Number.isNaN(t) ? 0 : t;
 }
 
 export class AccessLogger {
@@ -146,22 +172,30 @@ export class AccessLogger {
     if (q.status) out = out.filter((e) => String(e.status) === String(q.status));
     if (q.mapping) out = out.filter((e) => e.mapping === q.mapping);
     if (q.start) {
-      const s = new Date(q.start).getTime();
-      if (!Number.isNaN(s)) out = out.filter((e) => new Date(e.time).getTime() >= s);
+      const s = parseLogTime(q.start);
+      out = out.filter((e) => parseLogTime(e.time) >= s);
     }
     if (q.end) {
-      const en = new Date(q.end).getTime();
-      if (!Number.isNaN(en)) out = out.filter((e) => new Date(e.time).getTime() <= en);
+      const en = parseLogTime(q.end);
+      out = out.filter((e) => parseLogTime(e.time) <= en);
     }
     const dir = q.order === 'asc' ? 1 : -1;
-    out = out.slice().sort((a, b) => dir * (new Date(a.time).getTime() - new Date(b.time).getTime()));
+    out = out.slice().sort((a, b) => dir * (parseLogTime(a.time) - parseLogTime(b.time)));
     return out;
   }
 
   query(q: LogQuery): QueryResult {
     const items = this.applyFilter(this.parseAll(), q);
-    const limit = Math.min(q.limit ?? 200, 1000);
-    return { total: items.length, items: items.slice(0, limit) };
+    const total = items.length;
+    const pageSize = Math.min(Math.max(1, q.pageSize ?? 100), 1000);
+    const page = Math.max(1, q.page ?? 1);
+    const startIdx = (page - 1) * pageSize;
+    return {
+      total,
+      page,
+      pageSize,
+      items: items.slice(startIdx, startIdx + pageSize),
+    };
   }
 
   /** 导出（不限 limit，便于离线分析） */

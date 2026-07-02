@@ -153,3 +153,27 @@ input:focus, textarea:focus { outline: none; border-color: var(--primary); }
   padding: 10px 18px; border-radius: 8px; font-size: 14px; z-index: 60;
   box-shadow: 0 6px 20px rgba(0,0,0,.4);
 }
+
+/* 分页（Element 风格）与日志详情 */
+.pager { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; padding: 14px 0 4px; font-size: 13px; }
+.pager-total { color: var(--muted); }
+.pager-sizes { background: #0b1220; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font-size: 13px; cursor: pointer; }
+.pager-nav { display: flex; align-items: center; gap: 6px; }
+.pager-num, .pager-arrow {
+  min-width: 30px; height: 30px; padding: 0 8px;
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; font-size: 13px;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+}
+.pager-num:hover, .pager-arrow:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.pager-num.pager-active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.pager-arrow:disabled, .pager-num:disabled { opacity: .4; cursor: not-allowed; }
+.pager-ellipsis { width: 28px; text-align: center; color: var(--muted); }
+.pager-jumper { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.pager-jumper-input { width: 52px; background: #0b1220; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 6px; font-size: 13px; text-align: center; }
+.btn-disabled { opacity: .45; cursor: not-allowed; }
+.modal-card-wide { width: 580px; max-width: 92vw; }
+.detail-list { display: flex; flex-direction: column; gap: 6px; max-height: 62vh; overflow: auto; }
+.detail-row { display: flex; gap: 12px; font-size: 13px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.detail-k { flex: 0 0 96px; color: var(--muted); }
+.detail-v { word-break: break-all; }

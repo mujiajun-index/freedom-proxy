@@ -239,12 +239,18 @@ $('saveWhitelistBtn').addEventListener('click', async () => {
 });
 
 /* ---------- 访问日志 ---------- */
+let logPage = 1;
+let logPageSize = 100;
+let logPages = 1;
+let logPageItems = [];
+
 $('logFilter').addEventListener('submit', (e) => {
   e.preventDefault();
+  logPage = 1;
   loadLogs();
 });
 
-async function loadLogs() {
+function buildLogParams() {
   const p = new URLSearchParams();
   const ip = $('f-ip').value.trim();
   if (ip) p.set('ip', ip);
@@ -254,25 +260,38 @@ async function loadLogs() {
   if (status) p.set('status', status);
   const mapping = $('f-mapping').value.trim();
   if (mapping) p.set('mapping', mapping);
-  p.set('limit', $('f-limit').value || '200');
-  const qs = p.toString();
+  const startD = $('f-start').value;
+  if (startD) p.set('start', startD + ' 00:00:00.000');
+  const endD = $('f-end').value;
+  if (endD) p.set('end', endD + ' 23:59:59.999');
+  p.set('pageSize', String(logPageSize));
+  p.set('page', String(logPage));
+  return p;
+}
+
+async function loadLogs() {
+  const qs = buildLogParams().toString();
   $('exportLogsBtn').href = API + '/logs/export' + (qs ? '?' + qs : '');
   try {
     const d = await api('/logs' + (qs ? '?' + qs : ''));
-    renderLogs(d.data.items || []);
+    const data = d.data || {};
+    logPageItems = data.items || [];
+    renderLogs(logPageItems);
+    renderPager(data.total || 0, data.page || logPage, data.pageSize || 100);
   } catch (err) {
-    $('logsBody').innerHTML = `<tr><td colspan="8" class="error">${esc(err.message)}</td></tr>`;
+    $('logsBody').innerHTML = `<tr><td colspan="9" class="error">${esc(err.message)}</td></tr>`;
+    $('logPager').innerHTML = '';
   }
 }
 
 function renderLogs(items) {
   const tb = $('logsBody');
   if (!items.length) {
-    tb.innerHTML = `<tr><td colspan="8" class="muted">无匹配日志</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="9" class="muted">无匹配日志</td></tr>`;
     return;
   }
   tb.innerHTML = items
-    .map((l) => {
+    .map((l, i) => {
       const cls = 'status-' + String(l.status).charAt(0);
       return `<tr>
         <td>${esc(l.time)}</td>
@@ -283,16 +302,107 @@ function renderLogs(items) {
         <td>${l.elapsedMs}</td>
         <td>${esc(l.mapping)}</td>
         <td class="target-cell" title="${esc(l.target)}">${esc(l.target)}</td>
+        <td class="col-ops"><button class="btn btn-sm btn-ghost" data-detail="${i}">详情</button></td>
       </tr>`;
     })
     .join('');
 }
+
+$('logsBody').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-detail]');
+  if (!btn) return;
+  const item = logPageItems[Number(btn.dataset.detail)];
+  if (item) openLogDetail(item);
+});
+
+function openLogDetail(l) {
+  const fields = [
+    ['时间', l.time],
+    ['IP', l.ip],
+    ['方法', l.method],
+    ['路径', l.path],
+    ['状态码', l.status],
+    ['耗时(ms)', l.elapsedMs],
+    ['命中映射', l.mapping],
+    ['转发目标', l.target],
+    ['User-Agent', l.userAgent],
+    ['响应字节', l.bytes],
+  ];
+  $('logDetailBody').innerHTML = fields
+    .map(
+      ([k, v]) =>
+        `<div class="detail-row"><span class="detail-k">${esc(k)}</span><span class="detail-v">${esc(v)}</span></div>`
+    )
+    .join('');
+  $('logDetailModal').hidden = false;
+}
+$('logDetailClose').addEventListener('click', () => ($('logDetailModal').hidden = true));
+
+function pageList(current, pages) {
+  if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1);
+  const list = [1];
+  const left = Math.max(2, current - 2);
+  const right = Math.min(pages - 1, current + 2);
+  if (left > 2) list.push('…');
+  for (let i = left; i <= right; i++) list.push(i);
+  if (right < pages - 1) list.push('…');
+  list.push(pages);
+  return list;
+}
+
+function renderPager(total, page, pageSize) {
+  const pager = $('logPager');
+  logPages = Math.max(1, Math.ceil(total / pageSize));
+  if (!total) {
+    pager.innerHTML = '';
+    return;
+  }
+  const sizeSet = Array.from(new Set([20, 50, 100, 200, 500, pageSize])).sort((a, b) => a - b);
+  const sizeOptions = sizeSet
+    .map((s) => `<option value="${s}" ${s === pageSize ? 'selected' : ''}>${s} 条/页</option>`)
+    .join('');
+  const nums = pageList(page, logPages)
+    .map((n) =>
+      n === '…'
+        ? `<span class="pager-ellipsis">…</span>`
+        : `<button class="pager-num ${n === page ? 'pager-active' : ''}" data-page="${n}">${n}</button>`
+    )
+    .join('');
+  pager.innerHTML =
+    `<span class="pager-total">共 ${total} 条</span>` +
+    `<select class="pager-sizes" data-role="sizes">${sizeOptions}</select>` +
+    `<div class="pager-nav">` +
+    `<button class="pager-arrow" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''}>‹</button>` +
+    nums +
+    `<button class="pager-arrow" data-page="${page + 1}" ${page >= logPages ? 'disabled' : ''}>›</button>` +
+    `</div>` +
+    `<span class="pager-jumper">前往 <input type="number" class="pager-jumper-input" data-role="jumper" min="1" max="${logPages}" value="${page}"> 页</span>`;
+}
+
+$('logPager').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-page]');
+  if (!b || b.disabled) return;
+  logPage = Number(b.dataset.page) || 1;
+  loadLogs();
+});
+$('logPager').addEventListener('change', (e) => {
+  const role = e.target && e.target.dataset && e.target.dataset.role;
+  if (role === 'sizes') {
+    logPageSize = Math.min(1000, Math.max(1, Number(e.target.value) || 100));
+    logPage = 1;
+    loadLogs();
+  } else if (role === 'jumper') {
+    logPage = Math.min(Math.max(1, Number(e.target.value) || 1), logPages);
+    loadLogs();
+  }
+});
 
 $('clearLogsBtn').addEventListener('click', async () => {
   if (!confirm('确认清空当前访问日志？（轮转产生的历史文件不受影响）')) return;
   try {
     await api('/logs', { method: 'DELETE' });
     toast('已清空');
+    logPage = 1;
     loadLogs();
   } catch (err) {
     toast(err.message);

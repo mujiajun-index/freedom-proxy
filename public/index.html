@@ -82,19 +82,21 @@
         <label>路径<input type="text" id="f-path" placeholder="包含" /></label>
         <label>状态<input type="text" id="f-status" placeholder="如 502" /></label>
         <label>映射<input type="text" id="f-mapping" placeholder="/openai" /></label>
-        <label>数量<input type="number" id="f-limit" value="200" min="1" max="1000" /></label>
+        <label>开始日期<input type="date" id="f-start" /></label>
+        <label>结束日期<input type="date" id="f-end" /></label>
         <button class="btn btn-primary" type="submit">查询</button>
       </form>
       <div class="table-wrap">
         <table class="grid">
           <thead>
-            <tr><th>时间</th><th>IP</th><th>方法</th><th>路径</th><th>状态</th><th>耗时</th><th>映射</th><th>目标</th></tr>
+            <tr><th>时间</th><th>IP</th><th>方法</th><th>路径</th><th>状态</th><th>耗时</th><th>映射</th><th>目标</th><th class="col-ops">详情</th></tr>
           </thead>
           <tbody id="logsBody">
-            <tr><td colspan="8" class="muted">点击「查询」加载</td></tr>
+            <tr><td colspan="9" class="muted">点击「查询」加载</td></tr>
           </tbody>
         </table>
       </div>
+      <div id="logPager" class="pager"></div>
     </section>
   </main>
 
@@ -120,6 +122,14 @@
           <button type="submit" class="btn btn-primary">保存</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- 日志详情弹窗 -->
+  <div id="logDetailModal" class="modal" hidden>
+    <div class="modal-card modal-card-wide">
+      <div class="panel-head"><h2>日志详情</h2><button type="button" class="btn btn-ghost" id="logDetailClose">关闭</button></div>
+      <div id="logDetailBody" class="detail-list"></div>
     </div>
   </div>
 

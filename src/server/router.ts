@@ -3,6 +3,7 @@ import path from 'path';
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { ConfigStore } from '../store/config';
 import type { AccessLogger, LogQuery } from '../logger/access';
+import { formatLocalTime } from '../logger/access';
 import { IpWhitelist } from '../whitelist';
 import { verifyPassword } from '../auth/password';
 import { signSession, loginCookieHeader, logoutCookieHeader, SESSION_TTL_MS } from '../auth/session';
@@ -86,11 +87,16 @@ function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
 
 function buildLogQuery(url: URL): LogQuery {
   const g = (k: string): string | undefined => url.searchParams.get(k) || undefined;
-  const limitRaw = g('limit');
-  const limit = limitRaw ? parseInt(limitRaw, 10) : undefined;
+  const num = (k: string): number | undefined => {
+    const raw = g(k);
+    if (!raw) return undefined;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? n : undefined;
+  };
   const orderRaw = g('order');
   return {
-    limit: Number.isFinite(limit) ? limit : undefined,
+    page: num('page'),
+    pageSize: num('pageSize'),
     ip: g('ip'),
     path: g('path'),
     status: g('status'),
@@ -235,7 +241,7 @@ export function createRequestHandler(deps: HandlerDeps) {
     // 访问日志
     if (sub === '/api/logs' && method === 'GET') {
       const result = logger.query(buildLogQuery(url));
-      return respond(res, ctx, 200, { ok: true, data: { total: result.total, items: result.items } });
+      return respond(res, ctx, 200, { ok: true, data: result });
     }
     if (sub === '/api/logs' && method === 'DELETE') {
       logger.clear();
@@ -392,7 +398,7 @@ export function createRequestHandler(deps: HandlerDeps) {
         }
       }
       if (!ctx.skipLog) logger.log({
-        time: new Date().toISOString(),
+        time: formatLocalTime(new Date()),
         ip: ctx.ip,
         method: ctx.method,
         path: ctx.path,
