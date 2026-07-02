@@ -15,8 +15,14 @@ export function matchMapping(pathname: string, mappings: readonly Mapping[]): Ma
     .slice()
     .sort((a, b) => b.prefix.length - a.prefix.length);
   for (const m of candidates) {
-    if (pathname === m.prefix || pathname.startsWith(m.prefix + '/')) {
-      return { mapping: m, rest: pathname.slice(m.prefix.length) };
+    const prefix = m.prefix;
+    // 根映射 `/` 匹配任意路径；rest 保留完整路径，便于拼接到 target
+    if (prefix === '/') {
+      return { mapping: m, rest: pathname };
+    }
+    // 按路径段边界匹配，避免 /api 误命中 /apix
+    if (pathname === prefix || (pathname.startsWith(prefix) && pathname[prefix.length] === '/')) {
+      return { mapping: m, rest: pathname.slice(prefix.length) };
     }
   }
   return null;
