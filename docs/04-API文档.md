@@ -270,7 +270,72 @@
 
 ---
 
-## 六、状态码汇总
+## 六、访问日志
+
+记录每次访问（IP、地址、时间、命中映射、状态码、耗时等），存于 `logs/access.jsonl`。字段与配置见 [功能说明 · 访问日志](02-功能说明.md#5-访问日志) 与 [配置说明 · accessLog](03-配置说明.md#accesslog-访问日志)。
+
+### 查询日志
+
+`GET /{token}/api/logs`
+
+**查询参数（均可选）**
+
+| 参数 | 说明 |
+| --- | --- |
+| `limit` | 返回条数，默认 `200` |
+| `ip` | 按客户端 IP 筛选 |
+| `path` | 按请求路径模糊筛选 |
+| `status` | 按状态码筛选，如 `502` |
+| `mapping` | 按命中的映射 prefix 筛选 |
+| `start` / `end` | 时间区间（ISO 8601 或毫秒时间戳） |
+| `order` | `desc`（默认，最新在前）/ `asc` |
+
+**响应（200）**
+```json
+{
+  "ok": true,
+  "data": {
+    "total": 1234,
+    "items": [
+      {
+        "time": "2026-07-02T10:15:30+08:00",
+        "ip": "203.0.113.5",
+        "method": "POST",
+        "path": "/openai/v1/chat/completions",
+        "status": 200,
+        "elapsedMs": 318,
+        "mapping": "/openai",
+        "target": "https://api.openai.com/v1/chat/completions",
+        "userAgent": "curl/8.0",
+        "bytes": 1024
+      }
+    ]
+  }
+}
+```
+
+> 大日志文件下，服务端采用「尾部读取 + 过滤」实现，避免全量加载；返回的是最近的匹配记录。
+
+### 清空日志
+
+`DELETE /{token}/api/logs`
+
+清空当前日志文件（轮转产生的历史文件按 `keepFiles` / `retentionDays` 管理）。
+
+**响应（200）**
+```json
+{ "ok": true, "data": { "cleared": true } }
+```
+
+### 导出日志（可选）
+
+`GET /{token}/api/logs/export?format=jsonl`
+
+按筛选条件导出日志，返回 `application/x-ndjson`（或 `csv`）文件流，便于离线分析。
+
+---
+
+## 七、状态码汇总
 
 | 状态码 | 含义 |
 | --- | --- |
@@ -281,7 +346,7 @@
 | 404 | 资源（映射）不存在，或代理路径未命中 |
 | 502 | 代理转发时上游网络错误 |
 
-## 七、相关文档
+## 八、相关文档
 
 - 配置字段：[03-配置说明](03-配置说明.md)
 - 功能背景：[02-功能说明](02-功能说明.md)
