@@ -72,7 +72,11 @@ export async function proxyForward(
   match: MatchResult,
   search: string
 ): Promise<ForwardOutcome> {
-  const base = match.mapping.target.replace(/\/+$/, '');
+  // ws/wss 与 http/https 等价（仅区分是否 TLS）：HTTP 转发时归一化为 http/https 以便 fetch
+  const base = match.mapping.target
+    .replace(/\/+$/, '')
+    .replace(/^wss:\/\//i, 'https://')
+    .replace(/^ws:\/\//i, 'http://');
   const targetUrl = base + match.rest + (search || '');
 
   // 构造转发请求头

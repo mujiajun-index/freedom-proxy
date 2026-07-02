@@ -162,7 +162,7 @@ export class ConfigStore {
   static isValidTarget(target: string): boolean {
     try {
       const u = new URL(target);
-      return u.protocol === 'http:' || u.protocol === 'https:';
+      return ['http:', 'https:', 'ws:', 'wss:'].includes(u.protocol);
     } catch {
       return false;
     }
@@ -174,7 +174,7 @@ export class ConfigStore {
 
   addMapping(input: NewMappingInput): Mapping {
     const prefix = ConfigStore.normalizePrefix(input.prefix);
-    if (!ConfigStore.isValidTarget(input.target)) throw new Error('target 不是合法的 http(s) URL');
+    if (!ConfigStore.isValidTarget(input.target)) throw new Error('target 不是合法的 http(s)/ws(s) URL');
     if (this.cfg.mappings.some((m) => m.prefix === prefix)) {
       throw new Error(`前缀 ${prefix} 已存在`);
     }
@@ -194,7 +194,7 @@ export class ConfigStore {
     const idx = this.cfg.mappings.findIndex((m) => m.id === id);
     if (idx === -1) return null;
     const prefix = ConfigStore.normalizePrefix(input.prefix);
-    if (!ConfigStore.isValidTarget(input.target)) throw new Error('target 不是合法的 http(s) URL');
+    if (!ConfigStore.isValidTarget(input.target)) throw new Error('target 不是合法的 http(s)/ws(s) URL');
     if (this.cfg.mappings.some((m) => m.prefix === prefix && m.id !== id)) {
       throw new Error(`前缀 ${prefix} 已存在`);
     }

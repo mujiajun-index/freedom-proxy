@@ -223,7 +223,10 @@ export function createRequestHandler(deps: HandlerDeps) {
       const probeMethod = String(body.method || 'HEAD').toUpperCase() === 'GET' ? 'GET' : 'HEAD';
       let probePath = String(body.path || '/');
       if (!probePath.startsWith('/')) probePath = '/' + probePath;
-      const target = m.target.replace(/\/+$/, '') + probePath;
+      const target = m.target
+        .replace(/\/+$/, '')
+        .replace(/^wss:\/\//i, 'https://')
+        .replace(/^ws:\/\//i, 'http://') + probePath;
       const t0 = Date.now();
       try {
         const r = await fetch(target, { method: probeMethod, redirect: 'manual' });
