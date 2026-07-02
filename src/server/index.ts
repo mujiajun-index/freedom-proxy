@@ -3,6 +3,7 @@ import path from 'path';
 import { initConfig, ConfigStore } from '../store/config';
 import { AccessLogger } from '../logger/access';
 import { createRequestHandler } from './router';
+import { createUpgradeHandler } from '../proxy/websocket';
 import { loadDotenv } from './env';
 
 function truthy(v: string | undefined): boolean {
@@ -38,6 +39,9 @@ function main(): void {
       }
     });
   });
+
+  // WebSocket 升级处理（按映射前缀透明反向代理）
+  server.on('upgrade', createUpgradeHandler({ store, logger, trustProxy }));
 
   server.on('clientError', (err, socket) => {
     console.error('[server] clientError:', err.message);

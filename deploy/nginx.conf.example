@@ -2,6 +2,12 @@
 # 用法：复制为 /etc/nginx/conf.d/freedomproxy.conf 后 `nginx -t && nginx -s reload`
 # 将 proxy.example.com 替换为你的域名，并把 Node 服务监听端口对齐（默认 3000）。
 
+# HTTP 时 Connection 为空（默认 keep-alive），WebSocket Upgrade 时为 "upgrade"
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      '';
+}
+
 upstream freedomproxy {
     server 127.0.0.1:3000;
     keepalive 32;
@@ -21,12 +27,14 @@ server {
     proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
 
-    # --- 流式转发：SSE / 大响应体实时回传 ---
+    # --- 流式转发：SSE / WebSocket / 大响应体实时回传 ---
     proxy_http_version 1.1;
-    proxy_set_header   Connection "";
+    proxy_set_header   Upgrade    $http_upgrade;
+    proxy_set_header   Connection $connection_upgrade;
     proxy_buffering    off;
-    proxy_read_timeout 300s;
-    proxy_send_timeout 300s;
+    # WebSocket 长连接需要较大的超时
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
 
     # --- （可选）IP 白名单：在 nginx 层拦截，效率最高 ---
     # allow 192.168.1.10;
