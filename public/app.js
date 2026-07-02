@@ -132,6 +132,10 @@ document.querySelectorAll('.tab').forEach((t) =>
     const panel = $('tab-' + t.dataset.tab);
     panel.hidden = false;
     if (t.dataset.tab === 'whitelist') loadWhitelist();
+    if (t.dataset.tab === 'logs' && !logsLoadedOnce) {
+      logsLoadedOnce = true;
+      loadLogs();
+    }
   })
 );
 
@@ -285,6 +289,7 @@ let logPage = 1;
 let logPageSize = 100;
 let logPages = 1;
 let logPageItems = [];
+let logsLoadedOnce = false;
 
 $('logFilter').addEventListener('submit', (e) => {
   e.preventDefault();
