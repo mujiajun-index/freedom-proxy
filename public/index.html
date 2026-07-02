@@ -3,43 +3,129 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>freedomProxy 管理后台</title>
+  <title>FreedomProxy // 控制台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">freedomProxy <span class="brand-sub">管理后台</span></div>
+  <!-- 全局背景层：网格 + 径向光晕 + 扫描线 + 噪点 -->
+  <div class="bg-layer" aria-hidden="true">
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow-a"></div>
+    <div class="bg-glow bg-glow-b"></div>
+    <div class="bg-scan"></div>
+    <div class="bg-noise"></div>
+  </div>
+
+  <!-- 顶栏：仅登录后挂载（用模板占位，JS 控制渲染） -->
+  <header id="topbar" class="topbar" hidden>
+    <div class="brand">
+      <span class="brand-prompt">&gt;_</span>
+      <span class="brand-name">FreedomProxy</span>
+      <span class="brand-sep">/</span>
+      <span class="brand-sub">控制台</span>
+      <span class="brand-dot" aria-hidden="true"></span>
+    </div>
     <div class="topbar-right">
-      <span id="userBadge" class="badge"></span>
-      <button id="logoutBtn" class="btn btn-ghost" type="button">退出登录</button>
+      <div class="status-pill" title="服务运行中">
+        <span class="status-led"></span>
+        <span class="status-text">ONLINE</span>
+      </div>
+      <div class="user-chip" id="userChip">
+        <span class="user-avatar" id="userAvatar">A</span>
+        <span class="user-meta">
+          <span class="user-name" id="userName">admin</span>
+          <span class="user-role">管理员</span>
+        </span>
+      </div>
+      <button id="logoutBtn" class="btn btn-ghost" type="button">
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M15 12H3m0 0l4-4m-4 4l4 4M21 4v16"/></svg>
+        退出
+      </button>
     </div>
   </header>
 
   <!-- 登录视图 -->
-  <main id="loginView" class="center-card">
-    <form id="loginForm" class="card">
-      <h1>登录</h1>
-      <p class="muted">freedomProxy 管理后台</p>
-      <label>账号<input type="text" id="username" required autocomplete="username" /></label>
-      <label>密码<input type="password" id="password" required autocomplete="current-password" /></label>
-      <button class="btn btn-primary" type="submit">登录</button>
-      <p id="loginError" class="error" hidden></p>
-    </form>
+  <main id="loginView" class="login-stage">
+    <div class="login-frame">
+      <div class="login-corner login-corner-tl"></div>
+      <div class="login-corner login-corner-tr"></div>
+      <div class="login-corner login-corner-bl"></div>
+      <div class="login-corner login-corner-br"></div>
+
+      <div class="login-head">
+        <div class="login-tag">// SECURE ACCESS</div>
+        <h1 class="login-title">
+          <span>Freedom</span><span class="login-title-accent">Proxy</span>
+        </h1>
+        <p class="login-sub">代理控制台 · 身份验证</p>
+      </div>
+
+      <form id="loginForm" class="login-form">
+        <label class="field">
+          <span class="field-label">账号</span>
+          <span class="field-input">
+            <span class="field-prefix">user</span>
+            <input type="text" id="username" required autocomplete="username" />
+          </span>
+        </label>
+        <label class="field">
+          <span class="field-label">密码</span>
+          <span class="field-input">
+            <span class="field-prefix">pass</span>
+            <input type="password" id="password" required autocomplete="current-password" />
+          </span>
+        </label>
+
+        <button class="btn btn-primary btn-login" type="submit">
+          <span class="btn-glow"></span>
+          <span class="btn-label">进入控制台</span>
+        </button>
+
+        <p id="loginError" class="login-error" hidden></p>
+
+        <div class="login-foot">
+          <span class="login-foot-dot"></span>
+          会话加密 · 8 小时有效
+        </div>
+      </form>
+    </div>
   </main>
 
   <!-- 主视图 -->
-  <main id="appView" hidden>
-    <nav class="tabs">
-      <button class="tab active" data-tab="mappings">代理映射</button>
-      <button class="tab" data-tab="whitelist">IP 白名单</button>
-      <button class="tab" data-tab="logs">访问日志</button>
+  <main id="appView" class="app-stage" hidden>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="mappings" role="tab">
+        <span class="tab-num">01</span>
+        <span class="tab-label">代理映射</span>
+        <span class="tab-bar"></span>
+      </button>
+      <button class="tab" data-tab="whitelist" role="tab">
+        <span class="tab-num">02</span>
+        <span class="tab-label">IP 白名单</span>
+        <span class="tab-bar"></span>
+      </button>
+      <button class="tab" data-tab="logs" role="tab">
+        <span class="tab-num">03</span>
+        <span class="tab-label">访问日志</span>
+        <span class="tab-bar"></span>
+      </button>
+      <div class="tabs-glide" aria-hidden="true"></div>
     </nav>
 
     <!-- 代理映射 -->
     <section id="tab-mappings" class="panel">
       <div class="panel-head">
-        <h2>代理映射</h2>
-        <button class="btn btn-primary" id="addMappingBtn" type="button">+ 新增映射</button>
+        <div>
+          <div class="panel-eyebrow">/ mappings</div>
+          <h2 class="panel-title">代理映射</h2>
+        </div>
+        <button class="btn btn-primary" id="addMappingBtn" type="button">
+          <span class="btn-plus">+</span>
+          新增映射
+        </button>
       </div>
       <div class="table-wrap">
         <table class="grid">
@@ -57,7 +143,12 @@
 
     <!-- IP 白名单 -->
     <section id="tab-whitelist" class="panel" hidden>
-      <div class="panel-head"><h2>IP 白名单</h2></div>
+      <div class="panel-head">
+        <div>
+          <div class="panel-eyebrow">/ whitelist</div>
+          <h2 class="panel-title">IP 白名单</h2>
+        </div>
+      </div>
       <p class="muted">多个用英文分号 <code>;</code> 分隔，支持单 IP 与 CIDR（如 <code>192.168.1.10;10.0.0.0/24</code>）。留空表示不限制。</p>
       <label class="block">白名单
         <textarea id="whitelistInput" rows="3" placeholder="192.168.1.10;10.0.0.0/24"></textarea>
@@ -71,7 +162,10 @@
     <!-- 访问日志 -->
     <section id="tab-logs" class="panel" hidden>
       <div class="panel-head">
-        <h2>访问日志</h2>
+        <div>
+          <div class="panel-eyebrow">/ logs</div>
+          <h2 class="panel-title">访问日志</h2>
+        </div>
         <div class="row">
           <a class="btn btn-ghost" id="exportLogsBtn" href="#" target="_blank">导出</a>
           <button class="btn btn-danger" id="clearLogsBtn" type="button">清空</button>
@@ -103,7 +197,11 @@
   <!-- 映射编辑弹窗 -->
   <div id="modal" class="modal" hidden>
     <div class="modal-card">
-      <h2 id="modalTitle">新增映射</h2>
+      <div class="modal-card-edge"></div>
+      <div class="modal-head">
+        <span class="modal-eyebrow">// edit</span>
+        <h2 id="modalTitle">新增映射</h2>
+      </div>
       <form id="mappingForm">
         <input type="hidden" id="m-id" />
         <label class="block">路径前缀（如 <code>/openai</code>）
@@ -115,7 +213,7 @@
         <label class="block">备注
           <input type="text" id="m-note" placeholder="可选" />
         </label>
-        <label class="check"><input type="checkbox" id="m-enabled" checked /> 启用</label>
+        <label class="check"><input type="checkbox" id="m-enabled" checked /> <span>启用</span></label>
         <p id="modalError" class="error" hidden></p>
         <div class="row right">
           <button type="button" class="btn btn-ghost" id="modalCancel">取消</button>
@@ -128,7 +226,14 @@
   <!-- 日志详情弹窗 -->
   <div id="logDetailModal" class="modal" hidden>
     <div class="modal-card modal-card-wide">
-      <div class="panel-head"><h2>日志详情</h2><button type="button" class="btn btn-ghost" id="logDetailClose">关闭</button></div>
+      <div class="modal-card-edge"></div>
+      <div class="panel-head">
+        <div>
+          <div class="panel-eyebrow">// log detail</div>
+          <h2 class="panel-title">日志详情</h2>
+        </div>
+        <button type="button" class="btn btn-ghost" id="logDetailClose">关闭</button>
+      </div>
       <div id="logDetailBody" class="detail-list"></div>
     </div>
   </div>

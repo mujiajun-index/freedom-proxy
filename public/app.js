@@ -37,14 +37,55 @@ function toast(msg) {
 }
 
 /* ---------- 会话与登录 ---------- */
+// 关键：登录态切换时必须同时控制顶栏、loginView、appView 三者的可见性，
+// 否则退出登录后顶栏（管理员徽章 + 退出按钮）会残留显示。
 function showLogin() {
-  $('loginView').hidden = false;
-  $('appView').hidden = true;
+  const topbar = $('topbar');
+  const loginView = $('loginView');
+  const appView = $('appView');
+
+  // 清掉上一次登录的用户信息，避免下次登录前残留
+  const userName = $('userName');
+  const userAvatar = $('userAvatar');
+  if (userName) userName.textContent = '';
+  if (userAvatar) userAvatar.textContent = '?';
+
+  appView.hidden = true;
+  topbar.hidden = true;
+  loginView.hidden = false;
+
+  // 触发入场动画
+  loginView.style.animation = 'none';
+  // 强制 reflow，重新挂上动画
+  // eslint-disable-next-line no-unused-expressions
+  void loginView.offsetWidth;
+  loginView.style.animation = '';
+
+  // 清空密码框
+  const pwd = $('password');
+  if (pwd) pwd.value = '';
+  $('username').focus();
 }
+
 function showApp(user) {
-  $('loginView').hidden = true;
-  $('appView').hidden = false;
-  $('userBadge').textContent = user ? '管理员：' + user : '';
+  const topbar = $('topbar');
+  const loginView = $('loginView');
+  const appView = $('appView');
+
+  const userName = $('userName');
+  const userAvatar = $('userAvatar');
+  if (userName) userName.textContent = user || 'admin';
+  if (userAvatar) userAvatar.textContent = (user || 'A').charAt(0).toUpperCase();
+
+  loginView.hidden = true;
+  topbar.hidden = false;
+  appView.hidden = false;
+
+  appView.style.animation = 'none';
+  // eslint-disable-next-line no-unused-expressions
+  void appView.offsetWidth;
+  appView.style.animation = '';
+
   loadMappings();
 }
 
@@ -79,6 +120,7 @@ $('logoutBtn').addEventListener('click', async () => {
     /* ignore */
   }
   showLogin();
+  toast('已退出登录');
 });
 
 /* ---------- 标签页 ---------- */
