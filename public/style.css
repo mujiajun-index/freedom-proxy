@@ -565,8 +565,11 @@ input:focus, textarea:focus {
 }
 
 /* 表格 */
+/* 关键：使用 overflow: visible，避免 overflow-x:auto + overflow-y:visible
+   被浏览器按规范同时计算成 auto（一轴非 visible 时另一轴 visible→auto），
+   否则四角装饰伪元素定位在 -1px 会触发常显的横向/纵向滚动条。 */
 .table-wrap {
-  overflow-x: auto;
+  overflow: visible;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: rgba(10, 15, 28, 0.55);
@@ -580,6 +583,7 @@ input:focus, textarea:focus {
   width: 14px; height: 14px;
   border: 1px solid var(--primary);
   opacity: 0.7;
+  pointer-events: none;
 }
 .table-wrap::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
 .table-wrap::after  { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
@@ -588,15 +592,20 @@ input:focus, textarea:focus {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  table-layout: auto;
 }
 .grid th, .grid td {
   padding: 11px 14px;
   text-align: left;
   border-bottom: 1px solid var(--hairline);
+  /* 默认不换行：短列（时间/IP/状态/按钮列等）保持整洁、不被挤压 */
   white-space: nowrap;
 }
 .grid thead th {
-  position: sticky; top: 0;
+  /* sticky 相对页面滚动；吸顶到顶栏（60px）下方，避免被顶栏遮挡 */
+  position: sticky;
+  top: 60px;
+  z-index: 5;
   background: rgba(10, 15, 28, 0.95);
   color: var(--text-dim);
   font-weight: 500;
@@ -609,7 +618,17 @@ input:focus, textarea:focus {
   transition: background 0.15s var(--easing);
 }
 .grid tbody tr:hover { background: rgba(94, 234, 212, 0.04); }
+/* 操作列：窄列 + 不换行，按钮始终横排 */
 .col-ops { width: 1%; }
+.col-ops .btn + .btn { margin-left: 8px; }
+/* 仅路径 / 目标两类长内容列允许换行，避免撑出整张表宽度。
+   使用 .grid td.xxx 提高特殊性，覆盖上面的默认 nowrap。 */
+.grid td.path-cell,
+.grid td.target-cell {
+  white-space: normal;
+  word-break: break-all;
+  max-width: 360px;
+}
 .path-cell {
   font-family: "IBM Plex Mono", monospace;
   color: var(--primary);
@@ -618,9 +637,6 @@ input:focus, textarea:focus {
 .target-cell {
   font-family: "IBM Plex Mono", monospace;
   color: var(--text-dim);
-  max-width: 320px;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* 状态码色 */
