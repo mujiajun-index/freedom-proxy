@@ -1,0 +1,26 @@
+{
+  "name": "freedomproxy",
+  "version": "1.0.0",
+  "description": "Web 化、可自由配置的代理转发服务（管理后台 + 多映射代理 + IP 白名单 + 访问日志）",
+  "main": "dist/server/index.js",
+  "scripts": {
+    "dev": "tsx watch src/server/index.ts",
+    "build": "tsc",
+    "start": "node dist/server/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "proxy",
+    "reverse-proxy",
+    "gateway",
+    "nginx"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}

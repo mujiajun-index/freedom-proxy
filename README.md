@@ -34,7 +34,13 @@
 
 ## 快速开始（概念流程）
 
-1. **安装与运行 Node 服务**：安装依赖 → 编译 TypeScript → 启动服务（默认监听 `3000`）。详见 [部署指南](docs/05-部署指南.md#1-运行-nodejs-服务)。
+1. **安装与运行 Node 服务**（需 Node.js ≥ 18）：
+   ```bash
+   npm install            # 安装依赖
+   npm run dev            # 开发模式（tsx 热重载），或：
+   npm run build && npm start   # 编译后运行（默认监听 3000）
+   ```
+   首次启动会在控制台打印管理后台地址（如 `http://localhost:3000/32dfa51e`）。生产部署详见 [部署指南](docs/05-部署指南.md)。
 2. **获取随机管理地址**：首次启动会在控制台/日志打印形如 `管理后台地址: http://localhost:3000/32dfa51e` 的地址，该 token 已写入 `config.json`，之后固定。
 3. **登录后台**：访问该地址，使用管理员账号密码登录（账号密码见 [配置说明](docs/03-配置说明.md#管理员凭据)）。
 4. **新增映射**：例如前缀 `/openai`、目标 `https://api.openai.com`，保存即生效。访问 `http://localhost:3000/openai/v1/...` 将被转发到 `https://api.openai.com/v1/...`。
