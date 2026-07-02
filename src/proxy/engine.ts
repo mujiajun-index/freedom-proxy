@@ -49,6 +49,17 @@ export interface ForwardOutcome {
   bytes: number;
   /** 实际转发目标 URL */
   targetUrl: string;
+  /** 响应类型：stream / buffer */
+  streamType: string;
+}
+
+/** 根据响应判定是否流式：SSE（text/event-stream）或无 Content-Length 的分块响应视为流式 */
+function classifyStream(upstream: Response): string {
+  const ct = (upstream.headers.get('content-type') || '').toLowerCase();
+  if (ct.includes('text/event-stream')) return 'stream';
+  const noBody = upstream.status === 204 || upstream.status === 304;
+  if (!noBody && upstream.headers.get('content-length') == null) return 'stream'; // chunked
+  return 'buffer';
 }
 
 /**
@@ -117,8 +128,11 @@ export async function proxyForward(
         /* ignore */
       }
     }
-    return { status: 502, bytes: Buffer.byteLength(body), targetUrl };
+    return { status: 502, bytes: Buffer.byteLength(body), targetUrl, streamType: 'buffer' };
   }
+
+  // 判定响应是否流式
+  const streamType = classifyStream(upstream);
 
   // 复制响应头
   const respHeaders = new Headers();
@@ -136,7 +150,7 @@ export async function proxyForward(
 
   if (!upstream.body) {
     res.end();
-    return { status: upstream.status, bytes: 0, targetUrl };
+    return { status: upstream.status, bytes: 0, targetUrl, streamType };
   }
 
   // 流式回传响应体
@@ -153,7 +167,7 @@ export async function proxyForward(
       } catch {
         /* ignore */
       }
-      resolve({ status: upstream.status, bytes, targetUrl });
+      resolve({ status: upstream.status, bytes, targetUrl, streamType });
     });
     nodeStream.on('error', () => {
       try {
@@ -161,7 +175,7 @@ export async function proxyForward(
       } catch {
         /* ignore */
       }
-      resolve({ status: upstream.status, bytes, targetUrl });
+      resolve({ status: upstream.status, bytes, targetUrl, streamType });
     });
     nodeStream.pipe(res, { end: false });
   });

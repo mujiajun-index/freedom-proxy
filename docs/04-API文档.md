@@ -310,7 +310,8 @@
         "mapping": "/openai",
         "target": "https://api.openai.com/v1/chat/completions",
         "userAgent": "curl/8.0",
-        "bytes": 1024
+        "bytes": 1024,
+        "streamType": "stream"
       }
     ]
   }

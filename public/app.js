@@ -279,26 +279,32 @@ async function loadLogs() {
     renderLogs(logPageItems);
     renderPager(data.total || 0, data.page || logPage, data.pageSize || 100);
   } catch (err) {
-    $('logsBody').innerHTML = `<tr><td colspan="9" class="error">${esc(err.message)}</td></tr>`;
+    $('logsBody').innerHTML = `<tr><td colspan="10" class="error">${esc(err.message)}</td></tr>`;
     $('logPager').innerHTML = '';
   }
+}
+
+function streamLabel(v) {
+  return v === 'stream' ? '流式' : v === 'buffer' ? '非流式' : v || '-';
 }
 
 function renderLogs(items) {
   const tb = $('logsBody');
   if (!items.length) {
-    tb.innerHTML = `<tr><td colspan="9" class="muted">无匹配日志</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="10" class="muted">无匹配日志</td></tr>`;
     return;
   }
   tb.innerHTML = items
     .map((l, i) => {
       const cls = 'status-' + String(l.status).charAt(0);
+      const sCls = l.streamType === 'stream' ? 'status-2' : 'muted';
       return `<tr>
         <td>${esc(l.time)}</td>
         <td>${esc(l.ip)}</td>
         <td>${esc(l.method)}</td>
         <td class="path-cell" title="${esc(l.path)}">${esc(l.path)}</td>
         <td class="${cls}">${l.status}</td>
+        <td class="${sCls}">${streamLabel(l.streamType)}</td>
         <td>${l.elapsedMs}</td>
         <td>${esc(l.mapping)}</td>
         <td class="target-cell" title="${esc(l.target)}">${esc(l.target)}</td>
@@ -322,6 +328,7 @@ function openLogDetail(l) {
     ['方法', l.method],
     ['路径', l.path],
     ['状态码', l.status],
+    ['流式类型', streamLabel(l.streamType)],
     ['耗时(ms)', l.elapsedMs],
     ['命中映射', l.mapping],
     ['转发目标', l.target],

@@ -52,7 +52,7 @@ export interface Config {
 
 /** 一条访问日志 */
 export interface AccessLogEntry {
-  /** 访问时间（ISO 8601） */
+  /** 访问时间，本地时区 YYYY-MM-DD HH:mm:ss.SSS */
   time: string;
   /** 客户端 IP */
   ip: string;
@@ -72,4 +72,6 @@ export interface AccessLogEntry {
   userAgent: string;
   /** 响应字节大小 */
   bytes: number;
+  /** 响应类型：stream（流式 SSE/chunked）/ buffer（非流式）/ -（非代理） */
+  streamType: string;
 }

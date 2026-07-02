@@ -30,6 +30,8 @@ interface LogCtx {
   proxied: boolean;
   /** 是否跳过访问日志记录（管理后台自身请求不记录） */
   skipLog: boolean;
+  /** 响应类型 stream/buffer/- */
+  streamType: string;
 }
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -336,6 +338,7 @@ export function createRequestHandler(deps: HandlerDeps) {
       elapsedMs: 0,
       proxied: false,
       skipLog: false,
+      streamType: '-',
     };
 
     let url: URL;
@@ -383,6 +386,7 @@ export function createRequestHandler(deps: HandlerDeps) {
         ctx.status = outcome.status;
         ctx.bytes = outcome.bytes;
         ctx.target = outcome.targetUrl;
+        ctx.streamType = outcome.streamType;
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Internal Error';
@@ -408,6 +412,7 @@ export function createRequestHandler(deps: HandlerDeps) {
         target: ctx.target,
         userAgent: ctx.userAgent,
         bytes: ctx.bytes,
+        streamType: ctx.streamType,
       });
     }
   }
