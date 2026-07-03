@@ -6,24 +6,14 @@ import type { AccessLogger } from '../logger/access';
 import { formatLocalTime } from '../logger/access';
 import { IpWhitelist } from '../whitelist';
 import { matchMapping } from './engine';
+import { getClientIp } from '../server/ip';
 
 export interface UpgradeDeps {
   store: ConfigStore;
   logger: AccessLogger;
-  trustProxy: boolean;
 }
 
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
-
-function getClientIp(req: IncomingMessage, trustProxy: boolean): string {
-  if (trustProxy) {
-    const xreal = req.headers['x-real-ip'];
-    if (typeof xreal === 'string' && xreal) return xreal.split(',')[0].trim();
-    const xff = req.headers['x-forwarded-for'];
-    if (typeof xff === 'string' && xff) return xff.split(',')[0].trim();
-  }
-  return req.socket.remoteAddress || '';
-}
 
 /**
  * 创建 WebSocket 升级处理器（透明反向代理）。
@@ -42,7 +32,7 @@ export function createUpgradeHandler(deps: UpgradeDeps) {
     let mapping = '-';
     let targetUrl = '';
 
-    const clientIp = getClientIp(req, deps.trustProxy);
+    const clientIp = getClientIp(req, store);
     const ua = (req.headers['user-agent'] as string) || '';
 
     // 防止客户端 socket 的未处理 'error' 导致进程崩溃（升级连接随时可能 error，且早返回路径也要兜底）

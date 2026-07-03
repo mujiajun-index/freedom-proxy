@@ -42,6 +42,10 @@ export interface Config {
   ipWhitelist: string;
   /** Node 服务监听端口 */
   port: number;
+  /** 是否启用 Cloudflare 代理：开启后优先取 CF-Connecting-IP 作为客户端真实 IP */
+  cfEnabled: boolean;
+  /** 是否信任 nginx/反代转发的 X-Real-IP / X-Forwarded-For */
+  trustProxy: boolean;
   /** 会话签名密钥 */
   sessionSecret: string;
   /** 访问日志配置 */

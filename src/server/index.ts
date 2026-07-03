@@ -7,10 +7,6 @@ import { createRequestHandler } from './router';
 import { createUpgradeHandler } from '../proxy/websocket';
 import { loadDotenv } from './env';
 
-function truthy(v: string | undefined): boolean {
-  return String(v || '').toLowerCase() === 'true';
-}
-
 /**
  * 解析管理后台静态目录 public/。
  * 优先级：
@@ -48,13 +44,12 @@ function main(): void {
 
   const configPath = process.env.CONFIG_PATH || path.resolve(process.cwd(), 'config.json');
   const publicDir = resolvePublicDir();
-  const trustProxy = truthy(process.env.TRUST_PROXY);
 
   const init = initConfig(configPath);
   const store = new ConfigStore(init, configPath);
   const logger = new AccessLogger(store.accessLog, process.cwd());
 
-  const handle = createRequestHandler({ store, logger, publicDir, trustProxy });
+  const handle = createRequestHandler({ store, logger, publicDir });
 
   const server = http.createServer((req, res) => {
     handle(req, res).catch((err) => {
@@ -73,7 +68,7 @@ function main(): void {
   });
 
   // WebSocket 升级处理（按映射前缀透明反向代理）
-  server.on('upgrade', createUpgradeHandler({ store, logger, trustProxy }));
+  server.on('upgrade', createUpgradeHandler({ store, logger }));
 
   server.on('clientError', (err, socket) => {
     console.error('[server] clientError:', err.message);
@@ -104,7 +99,8 @@ function main(): void {
     console.log('----------------------------------------');
     console.log(`  访问日志     : ${logger.filePath}`);
     console.log(`  静态目录     : ${publicDir}`);
-    console.log(`  信任代理头   : ${trustProxy}`);
+    console.log(`  CF  代理     : ${store.cfEnabled ? '开启' : '关闭'}`);
+    console.log(`  Nginx 代理   : ${store.trustProxy ? '开启' : '关闭'}`);
     console.log('========================================');
   });
 }

@@ -112,6 +112,11 @@
         <span class="tab-label">访问日志</span>
         <span class="tab-bar"></span>
       </button>
+      <button class="tab" data-tab="maintenance" role="tab">
+        <span class="tab-num">04</span>
+        <span class="tab-label">系统维护</span>
+        <span class="tab-bar"></span>
+      </button>
       <div class="tabs-glide" aria-hidden="true"></div>
     </nav>
 
@@ -191,6 +196,35 @@
         </table>
       </div>
       <div id="logPager" class="pager"></div>
+    </section>
+
+    <!-- 系统维护 -->
+    <section id="tab-maintenance" class="panel" hidden>
+      <div class="panel-head">
+        <div>
+          <div class="panel-eyebrow">/ maintenance</div>
+          <h2 class="panel-title">系统维护</h2>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-title">CF 代理</div>
+          <div class="muted">经 Cloudflare 代理后开启；用于获取客户端真实 IP。</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="cfEnabledInput" /><span class="slider"></span></label>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-title">Nginx 代理</div>
+          <div class="muted">经 Nginx / 反向代理时开启；服务直连暴露时关闭。</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="trustProxyInput" /><span class="slider"></span></label>
+      </div>
+      <div class="row">
+        <button class="btn btn-primary" id="saveSystemBtn" type="button">保存</button>
+        <span id="systemMsg" class="muted"></span>
+      </div>
+      <p class="muted">提示：若已设置环境变量，每次重启都会以其为准，UI 修改仅在未设置对应环境变量时生效。</p>
     </section>
   </main>
 

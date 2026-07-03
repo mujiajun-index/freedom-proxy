@@ -13,6 +13,11 @@ function randomSecret(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
+/** 仅字面量 "true"（忽略大小写）为真，用于解析布尔型环境变量 */
+function truthy(v: string | undefined): boolean {
+  return String(v || '').toLowerCase() === 'true';
+}
+
 function defaultConfig(): Config {
   return {
     adminToken: '',
@@ -20,6 +25,8 @@ function defaultConfig(): Config {
     adminPasswordHash: '',
     ipWhitelist: '',
     port: 3000,
+    cfEnabled: false,
+    trustProxy: false,
     sessionSecret: '',
     accessLog: {
       enabled: true,
@@ -87,6 +94,9 @@ export function initConfig(filePath: string): InitResult {
   if (process.env.ADMIN_USER) cfg.adminUser = process.env.ADMIN_USER;
   if (process.env.SESSION_SECRET) cfg.sessionSecret = process.env.SESSION_SECRET;
   if (process.env.ACCESS_LOG_PATH) cfg.accessLog.file = process.env.ACCESS_LOG_PATH;
+  // 布尔开关：环境变量非空则每次启动覆盖 config.json（与 PORT 等同语义）
+  if (process.env.CF_ENABLED) cfg.cfEnabled = truthy(process.env.CF_ENABLED);
+  if (process.env.TRUST_PROXY) cfg.trustProxy = truthy(process.env.TRUST_PROXY);
 
   // 密码：env 明文优先（启动时哈希），否则用已存哈希，再否则首启随机生成
   const envPw = process.env.ADMIN_PASSWORD;
@@ -133,6 +143,12 @@ export class ConfigStore {
   }
   get port(): number {
     return this.cfg.port;
+  }
+  get cfEnabled(): boolean {
+    return this.cfg.cfEnabled;
+  }
+  get trustProxy(): boolean {
+    return this.cfg.trustProxy;
   }
   get adminUser(): string {
     return this.cfg.adminUser;
@@ -236,5 +252,16 @@ export class ConfigStore {
     this.cfg.ipWhitelist = spec.trim();
     this.persist();
     return { ok: true };
+  }
+
+  /** 更新系统维护开关（cfEnabled / trustProxy），仅写入提供的布尔字段并落盘 */
+  setSystemSettings(input: { cfEnabled?: boolean; trustProxy?: boolean }): {
+    cfEnabled: boolean;
+    trustProxy: boolean;
+  } {
+    if (typeof input.cfEnabled === 'boolean') this.cfg.cfEnabled = input.cfEnabled;
+    if (typeof input.trustProxy === 'boolean') this.cfg.trustProxy = input.trustProxy;
+    this.persist();
+    return { cfEnabled: this.cfg.cfEnabled, trustProxy: this.cfg.trustProxy };
   }
 }

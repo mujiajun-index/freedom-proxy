@@ -9,12 +9,12 @@ import { verifyPassword } from '../auth/password';
 import { signSession, loginCookieHeader, logoutCookieHeader, SESSION_TTL_MS } from '../auth/session';
 import { isAuthenticated } from '../auth/middleware';
 import { matchMapping, proxyForward } from '../proxy/engine';
+import { getClientIp } from './ip';
 
 export interface HandlerDeps {
   store: ConfigStore;
   logger: AccessLogger;
   publicDir: string;
-  trustProxy: boolean;
 }
 
 interface LogCtx {
@@ -45,16 +45,6 @@ const CONTENT_TYPES: Record<string, string> = {
   '.jpg': 'image/jpeg',
   '.ico': 'image/x-icon',
 };
-
-function getClientIp(req: IncomingMessage, trustProxy: boolean): string {
-  if (trustProxy) {
-    const xreal = req.headers['x-real-ip'];
-    if (typeof xreal === 'string' && xreal) return xreal.split(',')[0].trim();
-    const xff = req.headers['x-forwarded-for'];
-    if (typeof xff === 'string' && xff) return xff.split(',')[0].trim();
-  }
-  return req.socket.remoteAddress || '';
-}
 
 function respond(
   res: ServerResponse,
@@ -215,6 +205,16 @@ export function createRequestHandler(deps: HandlerDeps) {
       return respond(res, ctx, 200, { ok: true, data: { ipWhitelist: store.whitelistSpec } });
     }
 
+    // 系统维护设置（Cloudflare 代理 / 信任代理头）
+    if (sub === '/api/system' && method === 'GET') {
+      return respond(res, ctx, 200, { ok: true, data: { cfEnabled: store.cfEnabled, trustProxy: store.trustProxy } });
+    }
+    if (sub === '/api/system' && method === 'PUT') {
+      const body = await readJsonBody(req);
+      const r = store.setSystemSettings(body as { cfEnabled?: boolean; trustProxy?: boolean });
+      return respond(res, ctx, 200, { ok: true, data: r });
+    }
+
     // 连通性测试
     if (sub === '/api/test' && method === 'POST') {
       const body = await readJsonBody(req);
@@ -330,7 +330,7 @@ export function createRequestHandler(deps: HandlerDeps) {
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const start = Date.now();
     const ctx: LogCtx = {
-      ip: getClientIp(req, deps.trustProxy),
+      ip: getClientIp(req, deps.store),
       method: req.method || 'GET',
       path: req.url || '/',
       status: 500,

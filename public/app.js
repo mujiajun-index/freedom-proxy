@@ -132,6 +132,7 @@ document.querySelectorAll('.tab').forEach((t) =>
     const panel = $('tab-' + t.dataset.tab);
     panel.hidden = false;
     if (t.dataset.tab === 'whitelist') loadWhitelist();
+    if (t.dataset.tab === 'maintenance') loadSystem();
     if (t.dataset.tab === 'logs' && !logsLoadedOnce) {
       logsLoadedOnce = true;
       loadLogs();
@@ -281,6 +282,35 @@ $('saveWhitelistBtn').addEventListener('click', async () => {
     toast('白名单已保存');
   } catch (err) {
     $('whitelistMsg').textContent = err.message;
+  }
+});
+
+/* ---------- 系统维护 ---------- */
+async function loadSystem() {
+  try {
+    const d = await api('/system');
+    $('cfEnabledInput').checked = !!d.data.cfEnabled;
+    $('trustProxyInput').checked = !!d.data.trustProxy;
+    $('systemMsg').textContent = '';
+  } catch (err) {
+    $('systemMsg').textContent = err.message;
+  }
+}
+
+$('saveSystemBtn').addEventListener('click', async () => {
+  $('systemMsg').textContent = '';
+  try {
+    await api('/system', {
+      method: 'PUT',
+      body: JSON.stringify({
+        cfEnabled: $('cfEnabledInput').checked,
+        trustProxy: $('trustProxyInput').checked,
+      }),
+    });
+    $('systemMsg').textContent = '已保存';
+    toast('系统设置已保存');
+  } catch (err) {
+    $('systemMsg').textContent = err.message;
   }
 });
 
