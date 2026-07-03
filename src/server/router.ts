@@ -363,11 +363,14 @@ export function createRequestHandler(deps: HandlerDeps) {
     if (isAdminArea) ctx.skipLog = true;
 
     try {
-      // IP 白名单
-      const whitelist = new IpWhitelist(store.whitelistSpec);
-      if (!whitelist.allows(ctx.ip)) {
-        respond(res, ctx, 403, { ok: false, error: 'IP 不在白名单' });
-        return;
+      // IP 白名单：仅限制代理转发路径；管理后台（页面/登录/API）始终放行，
+      // 避免设置了不含自身 IP 的白名单后把自己锁在后台之外无法恢复。
+      if (!isAdminArea) {
+        const whitelist = new IpWhitelist(store.whitelistSpec);
+        if (!whitelist.allows(ctx.ip)) {
+          respond(res, ctx, 403, { ok: false, error: 'IP 不在白名单' });
+          return;
+        }
       }
 
       if (isAdminArea) {
