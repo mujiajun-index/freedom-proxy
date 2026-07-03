@@ -5,7 +5,7 @@
   "main": "dist/server/index.js",
   "scripts": {
     "dev": "tsx watch src/server/index.ts",
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-assets.cjs",
     "start": "node dist/server/index.js"
   },
   "engines": {
