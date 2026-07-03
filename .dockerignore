@@ -1,0 +1,12 @@
+node_modules
+dist
+.git
+.smoke-*
+data
+logs
+config.json
+.env
+*.zip
+deploy
+docs
+README.md

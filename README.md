@@ -48,6 +48,48 @@
 5. **（可选）配置 IP 白名单**：在后台填写允许的 IP（`;` 分隔），保存后非白名单 IP 将被拒绝。详见 [使用手册](docs/06-使用手册.md)。
 6. **接入 nginx**：用 nginx 反代到 Node 端口对外提供服务。详见 [部署指南](docs/05-部署指南.md#2-nginx-反向代理)。
 
+## Docker 部署
+
+> 服务器系统较老、装不上 Node 18 时首选：容器自带现代运行时，宿主机**无需安装 Node**。
+
+**1. 构建镜像**（项目根目录已含 `Dockerfile`）
+
+```bash
+docker build -t freedomproxy:latest .
+```
+
+**2. 启动容器**
+
+```bash
+docker run --name freedomproxy -d --restart always \
+  -p 3001:3000 \
+  -e TZ=Asia/Shanghai \
+  -e ADMIN_USER=admin \
+  -e ADMIN_PASSWORD=改成你的强密码 \
+  -e TRUST_PROXY=false \
+  -e CF_ENABLED=false \
+  -v /www/wwwroot/freedomproxy:/app/data \
+  freedomproxy:latest
+```
+
+- `-p 3001:3000`：宿主机端口 `3001` → 容器 `3000`，改左边即可换对外端口；
+- `-v /www/wwwroot/freedomproxy:/app/data`：持久化 `config.json` 与访问日志，**勿删**（换路径改左边）；
+- `-e TZ=Asia/Shanghai`：访问日志按北京时间记录；
+- 不设 `ADMIN_PASSWORD` 则首启随机生成，用 `docker logs freedomproxy` 查看打印的密码；
+- 经 nginx 反代时把 `TRUST_PROXY` 改为 `true`，并在后台「系统维护」开启「信任代理头」。
+
+**3. 查看管理后台地址与日志**
+
+```bash
+docker logs freedomproxy        # 首启日志里有「管理后台地址」和（未设密码时的）随机密码
+docker logs -f freedomproxy     # 实时日志
+docker restart freedomproxy     # 重启
+```
+
+浏览器访问 `http://服务器IP:3001/<token>` 登录（记得在防火墙/宝塔放行对应端口）。
+
+> 也可用 `docker compose up -d --build` 一键构建运行（仓库已含 `docker-compose.yaml`）。
+
 ## 文档索引
 
 | 文档 | 内容 |

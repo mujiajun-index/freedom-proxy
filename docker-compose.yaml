@@ -1,0 +1,23 @@
+services:
+  freedomproxy:
+    build: .
+    image: freedomproxy:latest
+    container_name: freedomproxy
+    restart: unless-stopped
+    ports:
+      - "3000:3000"          # 宿主机端口:容器端口；想换端口只改左边，如 "8080:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      ADMIN_USER: admin
+      # 登录密码：取消注释并改成你的强密码（设了就以它为准、每次启动生效）。
+      # 保持注释则首启随机生成，用 `docker compose logs freedomproxy` 查看打印的密码。
+      # ADMIN_PASSWORD: "改成你的强密码"
+      # 经 nginx/反代时设 "true"（并到后台「系统维护」开启「信任代理头」）；
+      # 容器端口直接对外暴露时设 "false"。
+      TRUST_PROXY: "false"
+      CF_ENABLED: "false"
+      # 固定会话密钥（不设则首启随机生成并写入 config.json）
+      # SESSION_SECRET: "一段随机长字符串"
+    volumes:
+      - ./data:/app/data     # 持久化 config.json 与访问日志，勿删
