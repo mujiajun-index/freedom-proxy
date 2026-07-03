@@ -368,7 +368,7 @@ export function createRequestHandler(deps: HandlerDeps) {
       if (!isAdminArea) {
         const whitelist = new IpWhitelist(store.whitelistSpec);
         if (!whitelist.allows(ctx.ip)) {
-          respond(res, ctx, 403, { ok: false, error: 'IP 不在白名单' });
+          respond(res, ctx, 403, { ok: false, error: `IP ${ctx.ip} 禁止访问` });
           return;
         }
       }
