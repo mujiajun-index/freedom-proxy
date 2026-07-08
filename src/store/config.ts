@@ -92,6 +92,9 @@ export function initConfig(filePath: string): InitResult {
   // 环境变量覆盖
   if (process.env.PORT) cfg.port = parseInt(process.env.PORT, 10) || cfg.port;
   if (process.env.ADMIN_USER) cfg.adminUser = process.env.ADMIN_USER;
+  // 固定管理入口前缀：无状态/Serverless 平台（如 Deno Deploy）每次冷启动都会重新生成 config.json，
+  // 若不固定则随机 adminToken 每次变化、管理地址不稳。去除首尾斜杠避免破坏前缀匹配。
+  if (process.env.ADMIN_TOKEN) cfg.adminToken = process.env.ADMIN_TOKEN.replace(/^\/+|\/+$/g, '');
   if (process.env.SESSION_SECRET) cfg.sessionSecret = process.env.SESSION_SECRET;
   if (process.env.ACCESS_LOG_PATH) cfg.accessLog.file = process.env.ACCESS_LOG_PATH;
   // 布尔开关：环境变量非空则每次启动覆盖 config.json（与 PORT 等同语义）

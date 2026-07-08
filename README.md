@@ -105,6 +105,7 @@ npm run build && npm start   # 编译后运行（默认监听 3000）
 | [API 文档](docs/04-API文档.md) | 管理后台 API、代理转发行为约定 |
 | [部署指南](docs/05-部署指南.md) | Docker 容器化部署、Node.js 运行、白名单落地、HTTPS |
 | [使用手册](docs/06-使用手册.md) | 管理后台操作指引与常见排查 |
+| [Deno Deploy 部署](docs/07-Deno-Deploy部署.md) | 新版 Deno Deploy（console.deno.com）部署、环境变量、Serverless 限制 |
 
 ## 代理映射示例
 

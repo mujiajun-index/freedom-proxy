@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Web 化、可自由配置的代理转发服务（管理后台 + 多映射代理 + IP 白名单 + 访问日志）",
   "main": "dist/server/index.js",
+  "type": "commonjs",
   "scripts": {
     "dev": "tsx watch src/server/index.ts",
     "build": "tsc && node scripts/copy-assets.cjs",
