@@ -2,26 +2,48 @@
 
 > 适用于**新版 Deno Deploy**（[console.deno.com](https://console.deno.com)）。旧版 Deploy Classic 已于 2026-07-20 停服，请勿使用。
 
-本项目原生是 Node.js + TypeScript（编译为 CommonJS）。新版 Deno Deploy 的运行时是**标准 Deno 2.x**（隔离 Linux 沙箱），完整支持 `node:http` / `fs` / `path` / `crypto` / `net` / `tls` 等内置模块，因此本项目**无需改写业务代码**即可运行。
+本项目原生是 Node.js + TypeScript（编译为 CommonJS）。新版 Deno Deploy 的运行时是**标准 Deno 2.x**（隔离 Linux 沙箱），完整支持 `node:http` / `fs` / `path` / `crypto` / `net` / `tls` 等内置模块，因此本项目**无需改写业务代码**即可运行；并通过 **Deno KV** 实现配置与访问日志的跨实例持久化。
 
 ## 为什么能在 Deno Deploy 上跑
 
-- 仓库根 `package.json` 已声明 `"type": "commonjs"`：Deno 据此把编译产物 `dist/**/*.js` 当 CommonJS 加载（提供 `exports`/`require`/`__dirname`/`module`），从而消除 `exports is not defined`。对 Node.js 是 no-op（Node 无 `type` 字段时本就按 CJS）。
-- 新版 Deno Deploy 运行时会「等待 HTTP 服务启动后路由请求」，所以入口里的 `http.createServer(...).listen(port)` 直接生效，平台忽略具体端口号。
+- 仓库根 `package.json` 已声明 `"type": "commonjs"`：Deno 据此把编译产物 `dist/**/*.js` 当 CommonJS 加载（提供 `exports`/`require`/`__dirname`/`module`），消除 `exports is not defined`。对 Node.js 是 no-op。
+- 新版 Deno Deploy 运行时会「等待 HTTP 服务启动后路由请求」，入口里的 `http.createServer(...).listen(port)` 直接生效，平台忽略具体端口号。
 - `Buffer` / `process` / 全局 `fetch` 等 Node 全局均可用。
 
-## 必需 / 推荐环境变量
+## 持久化：Deno KV（配置 + 访问日志）
 
-新版 Deno Deploy 是 **Serverless**：无流量时实例停止，有请求才冷启动，**文件系统不跨实例持久化**。因此务必用环境变量固定以下凭据，否则每次冷启动会随机重置（管理地址变化、已登录会话失效）：
+Serverless 实例空闲即停、冷启动开新沙箱，本地文件系统**不跨实例持久**。本项目用 **Deno KV** 解决：
 
-| 变量 | 必需 | 说明 |
-| --- | --- | --- |
-| `ADMIN_USER` | 推荐 | 管理员账号，默认 `admin` |
-| `ADMIN_PASSWORD` | **必需** | 管理员密码明文（启动时哈希）；不设则每次冷启动随机生成 |
-| `SESSION_SECRET` | **必需** | 会话签名密钥；不设则每次冷启动重置，旧会话全部失效 |
-| `ADMIN_TOKEN` | 推荐 | 管理后台地址前缀（如设为 `abc123`，则后台地址为 `/<域名>/abc123`）；不设则每次冷启动随机变化 |
+- **配置**（映射规则、管理设置、adminToken/密码哈希/会话密钥）：存单键 `["config"]`，冷启动后读回 → 后台改的映射**不再丢失**。
+- **访问日志**：**批量写** KV（缓冲满 50 条或每 20 秒刷新一次），并借 Deno Deploy 停机前的 **SIGINT 5 秒窗口**做最后一次刷盘，把残余日志落库。额度友好（见下）。
+- 代码内 `Deno.openKv()` 自动连到本项目关联的 KV，无需连接 URL/token。
+- Node/Docker 仍走原文件存储（`config.json` + `logs/access.jsonl`，含轮转），**完全不变**。
 
-> 以上变量均与 Node/Docker 部署通用，在 Deno Deploy 控制台 **Settings → Environment Variables** 中配置。
+**KV 免费额度参考**：存储 1 GiB；读 ≈ 1.5 万次/天；写 ≈ 1 万次/天；仅 1 主区域。
+- 配置：仅冷启动读 1 次 + 改配置写 1 次，远在额度内。
+- 日志：批量写后，1.5 万请求/天 ≈ 几百次写/天，安全。可在控制台 Databases 查看用量。
+
+## 第一步：创建并关联 KV 数据库（必需）
+
+代码第一次调用 `Deno.openKv()` 前，必须先在控制台为本项目开通 KV，否则启动会失败并打印指引。
+
+1. 进入 [console.deno.com](https://console.deno.com) → 你的项目。
+2. 打开 **Databases**（数据库）→ 新建一个 **KV** 数据库。
+3. 把该数据库**关联/绑定**到本项目（Attach/Link）。
+4. 重新部署。代码内 `Deno.openKv()` 即自动连接。
+
+## 环境变量（均为可选覆盖）
+
+由于配置已持久化到 KV，**首启随机生成的** adminToken / 管理员密码 / 会话密钥**会跨冷启动保留**，无需手动固定。下列变量仅在你想要**显式覆盖**时设置（在 **Settings → Environment Variables**）：
+
+| 变量 | 说明 |
+| --- | --- |
+| `ADMIN_USER` | 管理员账号，默认 `admin` |
+| `ADMIN_PASSWORD` | 管理员密码明文（启动时哈希）；设置后每次启动以它为准 |
+| `SESSION_SECRET` | 会话签名密钥；设置后固定，否则用 KV 中持久化的值 |
+| `ADMIN_TOKEN` | 管理后台地址前缀（如 `abc123` → `/<域名>/abc123`）；设置后固定 |
+
+> **首次部署如何拿到登录凭据**：不设上述变量时，首启会随机生成并在部署日志（控制台 **Logs/Console**）打印「随机生成密码」与「管理后台地址」，随后写入 KV 持久化。后续冷启动沿用同一套凭据。
 
 ## 部署方式 A：GitHub 集成（推荐）
 
@@ -30,8 +52,9 @@
    - **Build Command**: `npm install && npm run build`
    - **Entrypoint**: `dist/server/index.js`
    - （构建在 Node 环境执行 `tsc`，产出 CJS 到 `dist/`；运行时用 Deno 加载该入口）
-3. 在 **Environment Variables** 中填入上表变量。
-4. 部署成功后，访问 `https://<你的项目>.deno.dev/<ADMIN_TOKEN>` 进入管理后台。
+3. 按「第一步」创建并关联 KV 数据库。
+4. （可选）在 **Environment Variables** 填入上表变量。
+5. 部署成功后，访问 `https://<你的项目>.deno.dev/<ADMIN_TOKEN>` 进入管理后台。
 
 > ⚠️ 入口必须是 `dist/server/index.js`。若此前报错路径形如 `/app/src/dist/...`，说明入口或工作目录配错，请改为 `dist/server/index.js`。
 
@@ -51,19 +74,20 @@ deployctl deploy \
   --include=dist
 ```
 
-环境变量仍需在控制台配置（deployctl 不负责注入运行时环境变量）。
+KV 数据库仍需在控制台先行创建并关联（同「第一步」）。
 
 ## 本地用 Deno 验证
 
 ```bash
 npm run build
-deno task start          # 等价于 deno run --allow-net --allow-read --allow-write --allow-env dist/server/index.js
+deno task start          # 含 --unstable-kv，本地 KV 用内存/本地存储
 ```
 
-能正常打印 `freedomProxy 已启动` 即说明 Deno 可加载运行。
+能正常打印 `freedomProxy 已启动` 即说明 Deno 可加载运行；`Ctrl+C` 会触发 SIGINT 把缓冲日志刷入本地 KV。
 
 ## 已知限制（Serverless 环境）
 
-- **数据非持久**：`config.json` 与访问日志写入的文件系统是临时的，**实例停止/冷启动后丢失**。在后台改的映射规则不会跨实例保留。若需持久化，应改为外部存储（如 Deno KV / 数据库），本项目当前未集成。
-- **WebSocket 代理**：透明 WS 反代依赖裸 TCP socket（`net`/`tls` + `server.on('upgrade')`）。在 Deno Deploy 沙箱下**不一定可用**。HTTP 反向代理与管理后台功能正常；如需 WS，请在自托管 Docker 部署。
-- **单实例语义**：Serverless 多实例下，后台修改的配置只对当前实例生效，不广播到其他实例。
+- **多实例最终一致**：多实例并发改配置存在极小竞态；单管理员场景可忽略。一个实例写入的配置/日志，其他实例读取时为最终一致（通常亚秒级）。
+- **日志极端丢失**：实例被 `SIGKILL`（硬错误/超 5 秒）时可能丢最后一批未刷日志（≤50 条或 ≤20 秒流量），与文件 append 缓冲同等量级。
+- **日志无上限**：长期累积会使日志查询变慢；可在后台「访问日志」手动清理。
+- **WebSocket 代理**：透明 WS 反代依赖裸 TCP socket（`net`/`tls` + `server.on('upgrade')`），在 Deno Deploy 沙箱下**不一定可用**。HTTP 反向代理与管理后台正常；如需 WS，请在自托管 Docker 部署。

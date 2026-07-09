@@ -1,11 +1,14 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
-import { initConfig, ConfigStore } from '../store/config';
-import { AccessLogger } from '../logger/access';
+import { initConfig, ConfigStore, FileConfigPersister, KvConfigPersister } from '../store/config';
+import type { ConfigPersister } from '../store/config';
+import { AccessLogger, FileLogBackend, KvBatchLogBackend } from '../logger/access';
+import type { LogBackend } from '../logger/access';
 import { createRequestHandler } from './router';
 import { createUpgradeHandler } from '../proxy/websocket';
 import { loadDotenv } from './env';
+import { isDeno, getKv } from './runtime';
 
 /**
  * 解析管理后台静态目录 public/。
@@ -38,16 +41,32 @@ function resolvePublicDir(): string {
   return candidates[0];
 }
 
-function main(): void {
+async function main(): Promise<void> {
   // 启动时加载 .env（项目根目录），真实环境变量优先
   loadDotenv(path.resolve(process.cwd(), '.env'));
 
   const configPath = process.env.CONFIG_PATH || path.resolve(process.cwd(), 'config.json');
   const publicDir = resolvePublicDir();
 
-  const init = initConfig(configPath);
-  const store = new ConfigStore(init, configPath);
-  const logger = new AccessLogger(store.accessLog, process.cwd());
+  // 配置持久化后端：Deno（含 Deploy）用 KV；Node 用文件（保持原行为）
+  let configPersister: ConfigPersister;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let kvHandle: any = null;
+  if (isDeno) {
+    kvHandle = await getKv();
+    configPersister = new KvConfigPersister(kvHandle);
+  } else {
+    configPersister = new FileConfigPersister(configPath);
+  }
+
+  const init = await initConfig(configPersister);
+  const store = new ConfigStore(init, configPersister);
+
+  // 日志后端：Deno 用批量 KV（额度友好）；Node 用文件（含轮转）
+  const logBackend: LogBackend = isDeno
+    ? new KvBatchLogBackend(kvHandle)
+    : new FileLogBackend(store.accessLog, process.cwd());
+  const logger = new AccessLogger(store.accessLog, logBackend);
 
   const handle = createRequestHandler({ store, logger, publicDir });
 
@@ -94,7 +113,7 @@ function main(): void {
         console.log(`  随机生成密码 : ${init.generatedPassword}`);
         console.log('  （请妥善保存；可设置 ADMIN_PASSWORD 环境变量覆盖）');
       }
-      console.log(`  配置已写入   : ${configPath}`);
+      console.log(`  配置已写入   : ${isDeno ? 'Deno KV (["config"])' : configPath}`);
     }
     console.log('----------------------------------------');
     console.log(`  访问日志     : ${logger.filePath}`);
@@ -105,4 +124,7 @@ function main(): void {
   });
 }
 
-main();
+main().catch((err) => {
+  console.error('[server] 启动失败:', err);
+  process.exit(1);
+});

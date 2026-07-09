@@ -166,7 +166,7 @@ export function createRequestHandler(deps: HandlerDeps) {
     }
     if (sub === '/api/mappings' && method === 'POST') {
       const body = await readJsonBody(req);
-      const m = store.addMapping(body as { prefix: string; target: string; enabled?: boolean; note?: string });
+      const m = await store.addMapping(body as { prefix: string; target: string; enabled?: boolean; note?: string });
       return respond(res, ctx, 201, { ok: true, data: m });
     }
     const idMatch = sub.match(/^\/api\/mappings\/([^/]+)$/);
@@ -174,18 +174,18 @@ export function createRequestHandler(deps: HandlerDeps) {
       const id = decodeURIComponent(idMatch[1]);
       if (method === 'PUT') {
         const body = await readJsonBody(req);
-        const m = store.updateMapping(id, body as { prefix: string; target: string; enabled?: boolean; note?: string });
+        const m = await store.updateMapping(id, body as { prefix: string; target: string; enabled?: boolean; note?: string });
         if (!m) return respond(res, ctx, 404, { ok: false, error: '映射不存在' });
         return respond(res, ctx, 200, { ok: true, data: m });
       }
       if (method === 'PATCH') {
         const body = await readJsonBody(req);
-        const m = store.patchMapping(id, body as { enabled?: boolean });
+        const m = await store.patchMapping(id, body as { enabled?: boolean });
         if (!m) return respond(res, ctx, 404, { ok: false, error: '映射不存在' });
         return respond(res, ctx, 200, { ok: true, data: m });
       }
       if (method === 'DELETE') {
-        const ok = store.deleteMapping(id);
+        const ok = await store.deleteMapping(id);
         if (!ok) return respond(res, ctx, 404, { ok: false, error: '映射不存在' });
         return respond(res, ctx, 200, { ok: true });
       }
@@ -198,7 +198,7 @@ export function createRequestHandler(deps: HandlerDeps) {
     if (sub === '/api/whitelist' && method === 'PUT') {
       const body = await readJsonBody(req);
       const spec = String(body.ipWhitelist ?? '');
-      const result = store.setWhitelist(spec);
+      const result = await store.setWhitelist(spec);
       if (!result.ok) {
         return respond(res, ctx, 400, { ok: false, error: '无效的白名单条目: ' + result.errors.join('; ') });
       }
@@ -211,7 +211,7 @@ export function createRequestHandler(deps: HandlerDeps) {
     }
     if (sub === '/api/system' && method === 'PUT') {
       const body = await readJsonBody(req);
-      const r = store.setSystemSettings(body as { cfEnabled?: boolean; trustProxy?: boolean });
+      const r = await store.setSystemSettings(body as { cfEnabled?: boolean; trustProxy?: boolean });
       return respond(res, ctx, 200, { ok: true, data: r });
     }
 
@@ -245,15 +245,15 @@ export function createRequestHandler(deps: HandlerDeps) {
 
     // 访问日志
     if (sub === '/api/logs' && method === 'GET') {
-      const result = logger.query(buildLogQuery(url));
+      const result = await logger.query(buildLogQuery(url));
       return respond(res, ctx, 200, { ok: true, data: result });
     }
     if (sub === '/api/logs' && method === 'DELETE') {
-      logger.clear();
+      await logger.clear();
       return respond(res, ctx, 200, { ok: true, data: { cleared: true } });
     }
     if (sub === '/api/logs/export' && method === 'GET') {
-      const items = logger.exportItems(buildLogQuery(url));
+      const items = await logger.exportItems(buildLogQuery(url));
       const body = items.map((i) => JSON.stringify(i)).join('\n') + (items.length ? '\n' : '');
       ctx.status = 200;
       ctx.bytes = Buffer.byteLength(body);

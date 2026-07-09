@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import type { AccessLogConfig, AccessLogEntry } from '../types';
+import { onShutdown } from '../server/runtime';
 
 export interface LogQuery {
   page?: number;
@@ -44,7 +46,25 @@ function parseLogTime(s: string): number {
   return Number.isNaN(t) ? 0 : t;
 }
 
-export class AccessLogger {
+// ============ 日志后端抽象：Node 走文件（含轮转），Deno 走批量 KV ============
+
+/**
+ * 访问日志存储后端。
+ * append 为 fire-and-forget（不阻塞请求）；readAll/clear 为异步。
+ */
+export interface LogBackend {
+  /** 追加一条日志（尽力而为，不抛错阻塞请求） */
+  append(entry: AccessLogEntry): void;
+  /** 读取全部日志（已解析），供查询/导出 */
+  readAll(): Promise<AccessLogEntry[]>;
+  /** 清空全部日志 */
+  clear(): Promise<void>;
+  /** 存储位置描述（用于启动 banner 展示） */
+  readonly location: string;
+}
+
+/** 文件后端（Node/Docker）：严格复用原有 appendFile / 轮转 / 保留期逻辑 */
+export class FileLogBackend implements LogBackend {
   private readonly file: string;
   private cfg: AccessLogConfig;
   /** 自上次轮转以来的写入计数，用于节流保留期清理 */
@@ -56,14 +76,11 @@ export class AccessLogger {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
   }
 
-  get filePath(): string {
+  get location(): string {
     return this.file;
   }
 
-  /** 追加一条访问日志（异步、不阻塞请求） */
-  log(entry: AccessLogEntry): void {
-    if (!this.cfg.enabled) return;
-    if (this.cfg.logProxyOnly && entry.mapping === '-') return;
+  append(entry: AccessLogEntry): void {
     this.writeCount++;
     // 每 256 次写入检查一次轮转/清理，避免频繁 stat
     if (this.writeCount % 256 === 0) {
@@ -72,6 +89,26 @@ export class AccessLogger {
     fs.appendFile(this.file, JSON.stringify(entry) + '\n', (err) => {
       if (err) console.error('[accessLog] write error:', err.message);
     });
+  }
+
+  async readAll(): Promise<AccessLogEntry[]> {
+    return this.readLines()
+      .map((l) => {
+        try {
+          return JSON.parse(l) as AccessLogEntry;
+        } catch {
+          return null;
+        }
+      })
+      .filter((e): e is AccessLogEntry => e !== null);
+  }
+
+  async clear(): Promise<void> {
+    try {
+      fs.writeFileSync(this.file, '', 'utf8');
+    } catch (err) {
+      console.error('[accessLog] clear error:', (err as Error).message);
+    }
   }
 
   private sizeBytes(): number {
@@ -152,17 +189,102 @@ export class AccessLogger {
       /* ignore */
     }
   }
+}
 
-  private parseAll(): AccessLogEntry[] {
-    return this.readLines()
-      .map((l) => {
-        try {
-          return JSON.parse(l) as AccessLogEntry;
-        } catch {
-          return null;
-        }
+/** 批量阈值：缓冲达到该条数触发一次 KV 写 */
+const FLUSH_COUNT = 50;
+/** 定时刷新间隔（毫秒）：仅在缓冲非空时真正写入 */
+const FLUSH_INTERVAL_MS = 20000;
+/** KV 中日志批量的 key 前缀 */
+const LOG_PREFIX = ['logs'];
+
+/** Deno KV 批量后端：缓冲写 + 计数/定时/SIGINT 收尾，守在免费写额度内 */
+export class KvBatchLogBackend implements LogBackend {
+  private buffer: AccessLogEntry[] = [];
+  private flushing = false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private timer: any;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  constructor(private readonly kv: any) {
+    // 定时刷新：缓冲非空时才真正落 KV（scheduleFlush 内判空）
+    this.timer = setInterval(() => {
+      this.scheduleFlush();
+    }, FLUSH_INTERVAL_MS);
+    if (typeof this.timer?.unref === 'function') this.timer.unref();
+    // 关停收尾：借 SIGINT 的 5 秒窗口把残余缓冲刷入 KV
+    onShutdown(() => this.scheduleFlush());
+  }
+
+  get location(): string {
+    return '(Deno KV: logs, 批量)';
+  }
+
+  append(entry: AccessLogEntry): void {
+    this.buffer.push(entry);
+    if (this.buffer.length >= FLUSH_COUNT) this.scheduleFlush();
+  }
+
+  /**
+   * 触发一次刷新（fire-and-forget 安全）：快照并清空缓冲后写 KV。
+   * 写失败时把快照放回缓冲头部，下次重试，避免丢日志。
+   */
+  scheduleFlush(): Promise<void> {
+    if (this.flushing || this.buffer.length === 0) return Promise.resolve();
+    this.flushing = true;
+    const snapshot = this.buffer;
+    this.buffer = [];
+    const key = [LOG_PREFIX[0], Date.now(), crypto.randomBytes(6).toString('hex')];
+    return this.kv
+      .set(key, snapshot)
+      .catch((err: unknown) => {
+        this.buffer = [...snapshot, ...this.buffer];
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[accessLog] KV flush error:', msg);
       })
-      .filter((e): e is AccessLogEntry => e !== null);
+      .finally(() => {
+        this.flushing = false;
+      });
+  }
+
+  async readAll(): Promise<AccessLogEntry[]> {
+    // 先把当前缓冲并入，保证查询到最新未刷日志
+    await this.scheduleFlush();
+    const out: AccessLogEntry[] = [];
+    for await (const entry of this.kv.list({ prefix: LOG_PREFIX })) {
+      const batch = entry.value as AccessLogEntry[];
+      if (Array.isArray(batch)) for (const l of batch) out.push(l);
+    }
+    return out;
+  }
+
+  async clear(): Promise<void> {
+    this.buffer = [];
+    for await (const entry of this.kv.list({ prefix: LOG_PREFIX })) {
+      await this.kv.delete(entry.key);
+    }
+  }
+}
+
+/** 访问日志器：仅负责启用/过滤开关与查询/导出逻辑，I/O 委托给 backend */
+export class AccessLogger {
+  private cfg: AccessLogConfig;
+  private backend: LogBackend;
+
+  constructor(cfg: AccessLogConfig, backend: LogBackend) {
+    this.cfg = cfg;
+    this.backend = backend;
+  }
+
+  get filePath(): string {
+    return this.backend.location;
+  }
+
+  /** 追加一条访问日志（异步、不阻塞请求） */
+  log(entry: AccessLogEntry): void {
+    if (!this.cfg.enabled) return;
+    if (this.cfg.logProxyOnly && entry.mapping === '-') return;
+    this.backend.append(entry);
   }
 
   private applyFilter(items: AccessLogEntry[], q: LogQuery): AccessLogEntry[] {
@@ -184,8 +306,8 @@ export class AccessLogger {
     return out;
   }
 
-  query(q: LogQuery): QueryResult {
-    const items = this.applyFilter(this.parseAll(), q);
+  async query(q: LogQuery): Promise<QueryResult> {
+    const items = this.applyFilter(await this.backend.readAll(), q);
     const total = items.length;
     const pageSize = Math.min(Math.max(1, q.pageSize ?? 100), 1000);
     const page = Math.max(1, q.page ?? 1);
@@ -199,15 +321,11 @@ export class AccessLogger {
   }
 
   /** 导出（不限 limit，便于离线分析） */
-  exportItems(q: LogQuery): AccessLogEntry[] {
-    return this.applyFilter(this.parseAll(), q);
+  async exportItems(q: LogQuery): Promise<AccessLogEntry[]> {
+    return this.applyFilter(await this.backend.readAll(), q);
   }
 
-  clear(): void {
-    try {
-      fs.writeFileSync(this.file, '', 'utf8');
-    } catch (err) {
-      console.error('[accessLog] clear error:', (err as Error).message);
-    }
+  async clear(): Promise<void> {
+    await this.backend.clear();
   }
 }

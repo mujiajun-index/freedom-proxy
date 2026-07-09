@@ -40,7 +40,7 @@ function defaultConfig(): Config {
   };
 }
 
-/** 原子写入 JSON 文件（先写临时文件再重命名） */
+/** 原子写入 JSON 文件（先写临时文件再重命名）—— FileConfigPersister 专用 */
 function writeJsonAtomic(filePath: string, data: unknown): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmp = `${filePath}.${process.pid}.tmp`;
@@ -52,6 +52,47 @@ function readJson(filePath: string): Partial<Config> {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
+// ============ 持久化抽象：Node 走文件，Deno 走 KV ============
+
+/**
+ * 配置持久化后端。Node 下用文件（保持原有行为），Deno/Deno Deploy 下用 Deno KV。
+ * load 返回 null 表示“无已存配置”（首次启动）。
+ */
+export interface ConfigPersister {
+  load(): Promise<Partial<Config> | null>;
+  save(cfg: Config): Promise<void>;
+}
+
+/** 文件持久化（Node/Docker）：严格复用原有 readJson / writeJsonAtomic 逻辑 */
+export class FileConfigPersister implements ConfigPersister {
+  constructor(private readonly filePath: string) {}
+
+  async load(): Promise<Partial<Config> | null> {
+    if (!fs.existsSync(this.filePath)) return null;
+    return readJson(this.filePath);
+  }
+
+  async save(cfg: Config): Promise<void> {
+    writeJsonAtomic(this.filePath, cfg);
+  }
+}
+
+/** Deno KV 持久化：单键 ["config"] 存整个 Config 对象 */
+export class KvConfigPersister implements ConfigPersister {
+  private static readonly KEY = ['config'];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  constructor(private readonly kv: any) {}
+
+  async load(): Promise<Partial<Config> | null> {
+    const res = await this.kv.get(KvConfigPersister.KEY);
+    return (res?.value as Partial<Config> | null) ?? null;
+  }
+
+  async save(cfg: Config): Promise<void> {
+    await this.kv.set(KvConfigPersister.KEY, cfg);
+  }
+}
+
 export interface InitResult {
   config: Config;
   firstRun: boolean;
@@ -59,15 +100,18 @@ export interface InitResult {
   generatedPassword?: string;
 }
 
-/** 初始化配置：加载或创建 config.json，应用环境变量覆盖 */
-export function initConfig(filePath: string): InitResult {
+/**
+ * 初始化配置：加载或创建配置，应用环境变量覆盖，再落盘。
+ * Node 下文件读写为同步、外层包 Promise（行为与原先一致）；Deno 下走 KV（异步）。
+ */
+export async function initConfig(persister: ConfigPersister): Promise<InitResult> {
   const base = defaultConfig();
   let firstRun = false;
   let cfg: Config;
   let generatedPassword: string | undefined;
 
-  if (fs.existsSync(filePath)) {
-    const raw = readJson(filePath);
+  const raw = await persister.load();
+  if (raw && Object.keys(raw).length > 0) {
     cfg = {
       ...base,
       ...raw,
@@ -92,12 +136,11 @@ export function initConfig(filePath: string): InitResult {
   // 环境变量覆盖
   if (process.env.PORT) cfg.port = parseInt(process.env.PORT, 10) || cfg.port;
   if (process.env.ADMIN_USER) cfg.adminUser = process.env.ADMIN_USER;
-  // 固定管理入口前缀：无状态/Serverless 平台（如 Deno Deploy）每次冷启动都会重新生成 config.json，
-  // 若不固定则随机 adminToken 每次变化、管理地址不稳。去除首尾斜杠避免破坏前缀匹配。
+  // 可选：用环境变量固定管理入口前缀（覆盖持久化值）。去除首尾斜杠避免破坏前缀匹配。
   if (process.env.ADMIN_TOKEN) cfg.adminToken = process.env.ADMIN_TOKEN.replace(/^\/+|\/+$/g, '');
   if (process.env.SESSION_SECRET) cfg.sessionSecret = process.env.SESSION_SECRET;
   if (process.env.ACCESS_LOG_PATH) cfg.accessLog.file = process.env.ACCESS_LOG_PATH;
-  // 布尔开关：环境变量非空则每次启动覆盖 config.json（与 PORT 等同语义）
+  // 布尔开关：环境变量非空则每次启动覆盖（与 PORT 等同语义）
   if (process.env.CF_ENABLED) cfg.cfEnabled = truthy(process.env.CF_ENABLED);
   if (process.env.TRUST_PROXY) cfg.trustProxy = truthy(process.env.TRUST_PROXY);
 
@@ -110,7 +153,7 @@ export function initConfig(filePath: string): InitResult {
     cfg.adminPasswordHash = hashPassword(generatedPassword);
   }
 
-  writeJsonAtomic(filePath, cfg);
+  await persister.save(cfg);
   return { config: cfg, firstRun, generatedPassword };
 }
 
@@ -121,18 +164,18 @@ export interface NewMappingInput {
   note?: string;
 }
 
-/** 运行时配置存储：加载后内存缓存，变更时原子落盘 */
+/** 运行时配置存储：加载后内存缓存，变更时通过 persister 落盘 */
 export class ConfigStore {
   private cfg: Config;
-  private readonly filePath: string;
+  private readonly persister: ConfigPersister;
 
-  constructor(init: InitResult, filePath: string) {
+  constructor(init: InitResult, persister: ConfigPersister) {
     this.cfg = init.config;
-    this.filePath = filePath;
+    this.persister = persister;
   }
 
-  private persist(): void {
-    writeJsonAtomic(this.filePath, this.cfg);
+  private async persist(): Promise<void> {
+    await this.persister.save(this.cfg);
   }
 
   get all(): Config {
@@ -191,7 +234,7 @@ export class ConfigStore {
     return this.cfg.mappings.map((m) => ({ ...m }));
   }
 
-  addMapping(input: NewMappingInput): Mapping {
+  async addMapping(input: NewMappingInput): Promise<Mapping> {
     const prefix = ConfigStore.normalizePrefix(input.prefix);
     if (!ConfigStore.isValidTarget(input.target)) throw new Error('target 不是合法的 http(s)/ws(s) URL');
     if (this.cfg.mappings.some((m) => m.prefix === prefix)) {
@@ -205,11 +248,11 @@ export class ConfigStore {
       note: input.note?.trim() || '',
     };
     this.cfg.mappings.push(mapping);
-    this.persist();
+    await this.persist();
     return { ...mapping };
   }
 
-  updateMapping(id: string, input: NewMappingInput): Mapping | null {
+  async updateMapping(id: string, input: NewMappingInput): Promise<Mapping | null> {
     const idx = this.cfg.mappings.findIndex((m) => m.id === id);
     if (idx === -1) return null;
     const prefix = ConfigStore.normalizePrefix(input.prefix);
@@ -224,23 +267,23 @@ export class ConfigStore {
       enabled: input.enabled !== false,
       note: input.note?.trim() || '',
     };
-    this.persist();
+    await this.persist();
     return { ...this.cfg.mappings[idx] };
   }
 
-  patchMapping(id: string, patch: Partial<Pick<Mapping, 'enabled'>>): Mapping | null {
+  async patchMapping(id: string, patch: Partial<Pick<Mapping, 'enabled'>>): Promise<Mapping | null> {
     const idx = this.cfg.mappings.findIndex((m) => m.id === id);
     if (idx === -1) return null;
     if (typeof patch.enabled === 'boolean') this.cfg.mappings[idx].enabled = patch.enabled;
-    this.persist();
+    await this.persist();
     return { ...this.cfg.mappings[idx] };
   }
 
-  deleteMapping(id: string): boolean {
+  async deleteMapping(id: string): Promise<boolean> {
     const before = this.cfg.mappings.length;
     this.cfg.mappings = this.cfg.mappings.filter((m) => m.id !== id);
     const changed = this.cfg.mappings.length !== before;
-    if (changed) this.persist();
+    if (changed) await this.persist();
     return changed;
   }
 
@@ -249,22 +292,22 @@ export class ConfigStore {
     return m ? { ...m } : null;
   }
 
-  setWhitelist(spec: string): { ok: true } | { ok: false; errors: string[] } {
+  async setWhitelist(spec: string): Promise<{ ok: true } | { ok: false; errors: string[] }> {
     const result = validateWhitelistSpec(spec);
     if (!result.ok) return { ok: false, errors: result.errors };
     this.cfg.ipWhitelist = spec.trim();
-    this.persist();
+    await this.persist();
     return { ok: true };
   }
 
   /** 更新系统维护开关（cfEnabled / trustProxy），仅写入提供的布尔字段并落盘 */
-  setSystemSettings(input: { cfEnabled?: boolean; trustProxy?: boolean }): {
-    cfEnabled: boolean;
-    trustProxy: boolean;
-  } {
+  async setSystemSettings(input: {
+    cfEnabled?: boolean;
+    trustProxy?: boolean;
+  }): Promise<{ cfEnabled: boolean; trustProxy: boolean }> {
     if (typeof input.cfEnabled === 'boolean') this.cfg.cfEnabled = input.cfEnabled;
     if (typeof input.trustProxy === 'boolean') this.cfg.trustProxy = input.trustProxy;
-    this.persist();
+    await this.persist();
     return { cfEnabled: this.cfg.cfEnabled, trustProxy: this.cfg.trustProxy };
   }
 }
