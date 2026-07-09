@@ -23,7 +23,29 @@ function firstHeader(req: IncomingMessage, name: string): string {
   return typeof v === 'string' && v ? v.split(',')[0].trim() : '';
 }
 
-// ============ 诊断：DEBUG_CLIENT_IP=1 时打印前几个请求的全部头/socket，用于确认 Deno Deploy 实际提供的客户端 IP 来源 ============
+/**
+ * 解析「地址[:端口]」形式的客户端地址（如新版 Deno Deploy 的 `x-deno-client-address`）。
+ * 支持 `[::ffff:1.2.3.4]:5678`、`1.2.3.4:5678`、`1.2.3.4`、`::ffff:1.2.3.4` 等，
+ * 剥离端口与 IPv4 映射的 IPv6 前缀，返回纯 IP。
+ */
+function parseClientAddress(raw: string): string {
+  let v = raw.trim();
+  if (v.startsWith('[')) {
+    // IPv6 形如 [addr]:port
+    const end = v.indexOf(']');
+    if (end > 0) v = v.slice(1, end);
+  } else {
+    // 形如 ipv4:port 时剥离端口（纯 IPv6 不带方括号、含多个冒号，不会误伤）
+    const first = v.indexOf(':');
+    const last = v.lastIndexOf(':');
+    if (first === last && first > -1 && /^\d+$/.test(v.slice(last + 1))) {
+      v = v.slice(0, last);
+    }
+  }
+  return normalizeIp(v);
+}
+
+// ============ 诊断：DEBUG_CLIENT_IP=1 时打印前几个请求的全部头/socket，排查 IP 来源 ============
 const DEBUG_IP = String(process.env.DEBUG_CLIENT_IP || '').toLowerCase() === 'true';
 let debugLogged = 0;
 function debugDump(req: IncomingMessage): void {
@@ -38,12 +60,12 @@ function debugDump(req: IncomingMessage): void {
 
 /**
  * 解析客户端真实 IP。优先级：
- *   1. 开启 Cloudflare 时：CF-Connecting-IP（取不到则继续回退）
- *   2. Deno（含 Deploy）：依次尝试平台/反代写入的头（Fly-Client-IP / True-Client-IP / X-Real-IP / X-Forwarded-For）；
- *      注意——新版 Deno Deploy 实测可能不写任何头，真实 IP 仅存在于 Deno.serve 的 info.remoteAddr
- *      （node:http 拿不到）。此时会回退到 socket 并被过滤为 "-"。
- *   3. Node 信任代理头时：X-Real-IP / X-Forwarded-For
- *   4. 回退：socket.remoteAddress（Node 直连为真实 IP；Deno 下为 vsock，过滤后记 "-"）
+ *   1. 开启 Cloudflare 时：CF-Connecting-IP（用户显式声明在 CF 之后，最准）
+ *   2. Deno（含 Deploy）：平台权威头 x-deno-client-address（总在平台边缘之后，结构可信、不可伪造）
+ *   3. trustProxy 时：X-Real-IP / X-Forwarded-For（Node 与自托管 Deno 在 nginx/反代之后用）
+ *   4. 回退：socket.remoteAddress（Node 直连为真实 IP；Deno Deploy 下为内部 vsock，过滤后记 "-"）
+ *
+ * 安全：x-deno-client-address 仅在 isDeno 时采信——否则 Node 直连下客户端可伪造该头。
  */
 export function getClientIp(req: IncomingMessage, store: ConfigStore): string {
   debugDump(req);
@@ -54,13 +76,11 @@ export function getClientIp(req: IncomingMessage, store: ConfigStore): string {
   }
 
   if (isDeno) {
-    // 平台/反代专属头优先（Fly-Client-IP 不可伪造、最准），再退通用转发头
-    const candidates = ['fly-client-ip', 'true-client-ip', 'x-real-ip', 'x-forwarded-for'];
-    for (const h of candidates) {
-      const v = firstHeader(req, h);
-      if (v) return normalizeIp(v);
-    }
-  } else if (store.trustProxy) {
+    const deno = firstHeader(req, 'x-deno-client-address');
+    if (deno) return parseClientAddress(deno);
+  }
+
+  if (store.trustProxy) {
     const xreal = firstHeader(req, 'x-real-ip');
     if (xreal) return normalizeIp(xreal);
     const xff = firstHeader(req, 'x-forwarded-for');
