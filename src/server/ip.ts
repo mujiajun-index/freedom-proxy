@@ -23,28 +23,44 @@ function firstHeader(req: IncomingMessage, name: string): string {
   return typeof v === 'string' && v ? v.split(',')[0].trim() : '';
 }
 
+// ============ 诊断：DEBUG_CLIENT_IP=1 时打印前几个请求的全部头/socket，用于确认 Deno Deploy 实际提供的客户端 IP 来源 ============
+const DEBUG_IP = String(process.env.DEBUG_CLIENT_IP || '').toLowerCase() === 'true';
+let debugLogged = 0;
+function debugDump(req: IncomingMessage): void {
+  if (!DEBUG_IP || debugLogged >= 3) return;
+  debugLogged++;
+  // eslint-disable-next-line no-console
+  console.log(
+    `[debug-client-ip] #${debugLogged} socket.remoteAddress=${req.socket?.remoteAddress} ` +
+      `headers=${JSON.stringify(req.headers)}`
+  );
+}
+
 /**
- * 解析客户端真实 IP。按 store 配置实时读取，运行时切换立即生效。优先级：
+ * 解析客户端真实 IP。优先级：
  *   1. 开启 Cloudflare 时：CF-Connecting-IP（取不到则继续回退）
- *   2. Deno（含 Deploy）：应用始终在平台边缘之后，socket.remoteAddress 是内部 vsock 地址，
- *      真实 IP 只能取自平台写入的转发头（结构上始终可信，无需用户开关）
+ *   2. Deno（含 Deploy）：依次尝试平台/反代写入的头（Fly-Client-IP / True-Client-IP / X-Real-IP / X-Forwarded-For）；
+ *      注意——新版 Deno Deploy 实测可能不写任何头，真实 IP 仅存在于 Deno.serve 的 info.remoteAddr
+ *      （node:http 拿不到）。此时会回退到 socket 并被过滤为 "-"。
  *   3. Node 信任代理头时：X-Real-IP / X-Forwarded-For
- *   4. 回退：socket.remoteAddress（Node 直连时为真实 IP；Deno 下为 vsock，过滤后记 "-"）
+ *   4. 回退：socket.remoteAddress（Node 直连为真实 IP；Deno 下为 vsock，过滤后记 "-"）
  */
 export function getClientIp(req: IncomingMessage, store: ConfigStore): string {
+  debugDump(req);
+
   if (store.cfEnabled) {
     const cf = firstHeader(req, 'cf-connecting-ip');
     if (cf) return normalizeIp(cf);
   }
 
   if (isDeno) {
-    // Deno Deploy：平台边缘唯一可信来源
-    const xff = firstHeader(req, 'x-forwarded-for');
-    if (xff) return normalizeIp(xff);
-    const xreal = firstHeader(req, 'x-real-ip');
-    if (xreal) return normalizeIp(xreal);
+    // 平台/反代专属头优先（Fly-Client-IP 不可伪造、最准），再退通用转发头
+    const candidates = ['fly-client-ip', 'true-client-ip', 'x-real-ip', 'x-forwarded-for'];
+    for (const h of candidates) {
+      const v = firstHeader(req, h);
+      if (v) return normalizeIp(v);
+    }
   } else if (store.trustProxy) {
-    // Node：仅在声明信任反代时才取转发头
     const xreal = firstHeader(req, 'x-real-ip');
     if (xreal) return normalizeIp(xreal);
     const xff = firstHeader(req, 'x-forwarded-for');
